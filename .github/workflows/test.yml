@@ -26,8 +26,11 @@ jobs:
 
   build-test-image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     outputs:
-      image-id: ${{ steps.build.outputs.imageid }}
+      image-tag: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,14 +38,36 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build test image
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch,suffix=-test
+            type=ref,event=pr,suffix=-test
+            type=raw,value=test
+
+      - name: Build and push test image
         id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./docker/Dockerfile
-          load: true
-          tags: ssh-test-server:test
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=test
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            VCS_REF=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -102,6 +127,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+      - name: Pull test image
+        run: |
+          docker pull ghcr.io/${{ github.repository }}:test
+
       - name: Generate SSH key pair for testing
         run: |
           ssh-keygen -t rsa -b 2048 -f test_key -N ""
@@ -130,7 +166,7 @@ jobs:
           docker run -d --name ssh-test-${{ matrix.test-scenario.name }} \
             --env-file test.env \
             -p 2224:$(grep SSH_PORT test.env | cut -d= -f2 || echo 22) \
-            ssh-test-server:test
+            ghcr.io/${{ github.repository }}:test
           
           # Wait for container to start
           sleep 5
@@ -232,6 +268,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+      - name: Pull test image
+        run: |
+          docker pull ghcr.io/${{ github.repository }}:test
+
       - name: Performance test
         run: |
           # Start SSH server
@@ -240,7 +287,7 @@ jobs:
             -e SSH_PASSWORD=perfpass \
             -e SSH_DEBUG_LEVEL=0 \
             -p 2224:22 \
-            ssh-test-server:test
+            ghcr.io/${{ github.repository }}:test
           
           sleep 5
           
@@ -281,6 +328,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+      - name: Pull test image
+        run: |
+          docker pull ghcr.io/${{ github.repository }}:test
+
       - name: Security configuration test
         run: |
           # Start SSH server with security settings
@@ -295,7 +353,7 @@ jobs:
             -e SSH_AGENT_FORWARDING=no \
             -e SSH_TCP_FORWARDING=no \
             -p 2224:22 \
-            ssh-test-server:test
+            ghcr.io/${{ github.repository }}:test
           
           sleep 5
           
