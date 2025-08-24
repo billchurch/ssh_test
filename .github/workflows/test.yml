@@ -282,7 +282,29 @@ jobs:
               -o PasswordAuthentication=no -i test_key \
               -p ${{ matrix.test-scenario.host_port }} "$SSH_USER@localhost" "echo 'Key auth successful'" || {
               echo "❌ SSH key authentication failed"
-              echo "Container logs:"
+              echo ""
+              echo "=== Container debugging ==="
+              echo "Checking authorized_keys file in container:"
+              docker exec ssh-test-${{ matrix.test-scenario.name }} sh -c "
+                echo 'User home directory contents:'
+                ls -la /home/$SSH_USER/
+                echo ''
+                echo '.ssh directory contents:'
+                ls -la /home/$SSH_USER/.ssh/ 2>/dev/null || echo '.ssh directory does not exist'
+                echo ''
+                echo 'authorized_keys file contents:'
+                cat /home/$SSH_USER/.ssh/authorized_keys 2>/dev/null || echo 'authorized_keys file does not exist'
+                echo ''
+                echo 'authorized_keys file permissions:'
+                ls -la /home/$SSH_USER/.ssh/authorized_keys 2>/dev/null || echo 'authorized_keys file does not exist'
+                echo ''
+                echo 'User ownership:'
+                id $SSH_USER
+                echo 'File ownership:'
+                ls -la /home/$SSH_USER/.ssh/ 2>/dev/null | head -5
+              "
+              echo ""
+              echo "Recent container logs:"
               docker logs ssh-test-${{ matrix.test-scenario.name }} | tail -20
               exit 1
             }
