@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         test-scenario:
           - name: "password-auth"
@@ -104,7 +104,7 @@ jobs:
               SSH_PERMIT_PASSWORD_AUTH=yes
               SSH_DEBUG_LEVEL=2
           - name: "debug-mode"
-            host_port: 2224
+            host_port: 2227
             env_vars: |
               SSH_USER=debuguser
               SSH_PASSWORD=debug789
@@ -116,7 +116,7 @@ jobs:
               SSH_USER=minuser
               SSH_PASSWORD=minpass
           - name: "security-hardened"
-            host_port: 2226
+            host_port: 2228
             env_vars: |
               SSH_USER=secureuser
               SSH_PASSWORD=securepass
@@ -175,7 +175,10 @@ jobs:
       - name: Start SSH test server
         run: |
           # Get SSH port from environment (default to 22)
-          SSH_PORT=$(grep SSH_PORT test.env | cut -d= -f2 2>/dev/null || echo 22)
+          SSH_PORT=$(grep SSH_PORT test.env | cut -d= -f2 2>/dev/null || echo "")
+          if [ -z "$SSH_PORT" ]; then
+            SSH_PORT=22
+          fi
           echo "Container SSH port: $SSH_PORT"
           echo "Host port: ${{ matrix.test-scenario.host_port }}"
           
@@ -331,7 +334,7 @@ jobs:
             -e SSH_USER=perfuser \
             -e SSH_PASSWORD=perfpass \
             -e SSH_DEBUG_LEVEL=0 \
-            -p 2224:22 \
+            -p 2229:22 \
             ghcr.io/${{ github.repository }}:test
           
           sleep 5
@@ -342,7 +345,7 @@ jobs:
           # Connection time test
           start_time=$(date +%s%N)
           sshpass -p "perfpass" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-            -p 2224 perfuser@localhost "exit"
+            -p 2229 perfuser@localhost "exit"
           end_time=$(date +%s%N)
           
           connection_time=$(((end_time - start_time) / 1000000))
@@ -355,7 +358,7 @@ jobs:
           echo "Testing concurrent connections..."
           for i in {1..5}; do
             sshpass -p "perfpass" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -p 2224 perfuser@localhost "sleep 1 && echo 'Connection $i'" &
+              -p 2229 perfuser@localhost "sleep 1 && echo 'Connection $i'" &
           done
           
           wait
@@ -397,7 +400,7 @@ jobs:
             -e SSH_X11_FORWARDING=no \
             -e SSH_AGENT_FORWARDING=no \
             -e SSH_TCP_FORWARDING=no \
-            -p 2224:22 \
+            -p 2230:22 \
             ghcr.io/${{ github.repository }}:test
           
           sleep 5
@@ -405,7 +408,7 @@ jobs:
           # Test that root login is denied
           echo "Testing root login denial..."
           if sshpass -p "secpass" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-             -p 2224 root@localhost "exit" 2>/dev/null; then
+             -p 2230 root@localhost "exit" 2>/dev/null; then
             echo "❌ Root login should be denied"
             exit 1
           fi
@@ -414,7 +417,7 @@ jobs:
           # Test max auth tries (should fail after 2 attempts)
           echo "Testing max auth tries..."
           if sshpass -p "wrongpass" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-             -o NumberOfPasswordPrompts=3 -p 2224 secuser@localhost "exit" 2>/dev/null; then
+             -o NumberOfPasswordPrompts=3 -p 2230 secuser@localhost "exit" 2>/dev/null; then
             echo "❌ Should fail after max auth tries"
             exit 1
           fi
