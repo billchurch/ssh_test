@@ -1,0 +1,194 @@
+# SSH Test Server - Docker Compose Examples
+# This file demonstrates various configurations for the SSH test server
+version: '3.8'
+
+services:
+  # Basic password authentication setup
+  ssh-password-basic:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ssh-test-password
+    ports:
+      - "2224:22"
+    environment:
+      - SSH_USER=testuser
+      - SSH_PASSWORD=testpass123
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_PERMIT_PUBKEY_AUTH=no
+      - SSH_DEBUG_LEVEL=1
+    restart: unless-stopped
+    profiles:
+      - basic
+
+  # Public key only authentication
+  ssh-pubkey-only:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ssh-test-pubkey
+    ports:
+      - "2223:22"
+    environment:
+      - SSH_USER=keyuser
+      - SSH_AUTHORIZED_KEYS=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDJ... user@example.com
+      - SSH_PERMIT_PASSWORD_AUTH=no
+      - SSH_PERMIT_PUBKEY_AUTH=yes
+      - SSH_DEBUG_LEVEL=1
+    volumes:
+      - ./authorized_keys.example:/tmp/authorized_keys:ro
+    restart: unless-stopped
+    profiles:
+      - pubkey
+
+  # Custom port and debug mode
+  ssh-custom-port:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ssh-test-custom-port
+    ports:
+      - "2224:2224"
+    environment:
+      - SSH_USER=portuser
+      - SSH_PASSWORD=portpass456
+      - SSH_PORT=2224
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_DEBUG_LEVEL=3
+    restart: unless-stopped
+    profiles:
+      - custom
+
+  # Security hardened configuration
+  ssh-hardened:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ssh-test-hardened
+    ports:
+      - "2225:22"
+    environment:
+      - SSH_USER=secureuser
+      - SSH_PASSWORD=SecureP@ss789
+      - SSH_PERMIT_ROOT_LOGIN=no
+      - SSH_PERMIT_EMPTY_PASSWORDS=no
+      - SSH_MAX_AUTH_TRIES=3
+      - SSH_LOGIN_GRACE_TIME=60
+      - SSH_USE_DNS=no
+      - SSH_X11_FORWARDING=no
+      - SSH_AGENT_FORWARDING=no
+      - SSH_TCP_FORWARDING=no
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_PERMIT_PUBKEY_AUTH=yes
+    restart: unless-stopped
+    profiles:
+      - hardened
+
+  # Multi-user setup (using multiple containers)
+  ssh-user1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ssh-test-user1
+    ports:
+      - "2226:22"
+    environment:
+      - SSH_USER=user1
+      - SSH_PASSWORD=pass1
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+    restart: unless-stopped
+    profiles:
+      - multi
+
+  ssh-user2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ssh-test-user2
+    ports:
+      - "2227:22"
+    environment:
+      - SSH_USER=user2
+      - SSH_PASSWORD=pass2
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+    restart: unless-stopped
+    profiles:
+      - multi
+
+  # Development/testing setup with volume mounts
+  ssh-development:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ssh-test-dev
+    ports:
+      - "2228:22"
+    environment:
+      - SSH_USER=developer
+      - SSH_PASSWORD=devpass
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_PERMIT_PUBKEY_AUTH=yes
+      - SSH_DEBUG_LEVEL=2
+      - SSH_CUSTOM_CONFIG=|
+        AcceptEnv LANG LC_*
+        PrintMotd yes
+        Banner /etc/ssh/banner
+    volumes:
+      - ./dev-workspace:/home/developer/workspace:rw
+      - ./ssh-banner.txt:/etc/ssh/banner:ro
+    restart: unless-stopped
+    profiles:
+      - dev
+
+  # Keyboard-interactive authentication
+  ssh-keyboard-interactive:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ssh-test-keyboard
+    ports:
+      - "2229:22"
+    environment:
+      - SSH_USER=kiuser
+      - SSH_PASSWORD=kipass
+      - SSH_PERMIT_PASSWORD_AUTH=no
+      - SSH_PERMIT_PUBKEY_AUTH=no
+      - SSH_CHALLENGE_RESPONSE_AUTH=yes
+      - SSH_USE_PAM=yes
+      - SSH_AUTH_METHODS=keyboard-interactive
+      - SSH_DEBUG_LEVEL=2
+    restart: unless-stopped
+    profiles:
+      - keyboard-interactive
+
+  # Testing specific SSH client compatibility
+  ssh-legacy:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ssh-test-legacy
+    ports:
+      - "2230:22"
+    environment:
+      - SSH_USER=legacyuser
+      - SSH_PASSWORD=legacy123
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_USE_DNS=yes
+      - SSH_X11_FORWARDING=yes
+      - SSH_AGENT_FORWARDING=yes
+      - SSH_TCP_FORWARDING=yes
+      - SSH_CUSTOM_CONFIG=|
+        Protocol 2
+        Ciphers aes128-ctr,aes192-ctr,aes256-ctr
+        MACs hmac-sha1,hmac-sha2-256,hmac-sha2-512
+    restart: unless-stopped
+    profiles:
+      - legacy
+
+volumes:
+  dev-workspace:
+    driver: local
+
+networks:
+  default:
+    name: ssh-test-network

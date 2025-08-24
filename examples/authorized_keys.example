@@ -1,0 +1,39 @@
+# SSH Test Server - Example Authorized Keys
+# This file contains example SSH public keys for testing
+# In production, replace with your actual public keys
+
+# Example RSA key (2048-bit) - commonly supported
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDJ7+RzTvWBx1Y7N2mRnI5Vz8KbW1jGfR9x4QH2LpNc8VxW9fF2mQ1aA3bC4dE5fG6hI7jK8lM9nO0pQ1rS2tU3vW4xY5zA6bC7dE8fG9hI0jK1lM2nO3pQ4rS5tU6vW7xY8zA9bC0dE1fG2hI3jK4lM5nO6pQ7rS8tU9vW0xY1zA2bC3dE4fG5hI6jK7lM8nO9pQ0rS1tU2vW3xY4zA5bC6dE7fG8hI9jK0lM1nO2pQ3rS4tU5vW6xY7zA8bC9dE0fG1hI2jK3lM4nO5pQ6rS7tU8vW9xY0zA1bC2dE3fG4hI5jK6lM7nO8pQ9rS0tU1vW2xY3zA4bC5dE6fG7hI8jK9lM0nO1pQ2rS3tU4vW5xY6zA7bC8dE9fG0hI1jK2lM3nO4pQ5rS6tU7vW8xY9zA0 testuser@example.com
+
+# Example Ed25519 key (modern, secure) - preferred for new installations  
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC4PDAE5l8j3EX1QEQ+x1Tv1F2mQ3aA4bC5dE6fG7hI8 testuser@modern.com
+
+# Example ECDSA key (256-bit) - good balance of security and compatibility
+ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKjK2lM3nO4pQ5rS6tU7vW8xY9zA0bC1dE2fG3hI4jK5lM6nO7pQ8rS9tU0vW1xY2zA3bC4dE5fG6hI7jK8lM9n= testuser@ecdsa.com
+
+# Example for CI/CD or automated testing
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC8x9zA0bC1dE2fG3hI4jK5lM6nO7pQ8rS9tU0vW1xY2zA3bC4dE5fG6hI7jK8lM9nO0pQ1rS2tU3vW4xY5zA6bC7dE8fG9hI0jK1lM2nO3pQ4rS5tU6vW7xY8zA9bC0dE1fG2hI3jK4lM5nO6pQ7rS8tU9vW0xY1zA2bC3dE4fG5hI6jK7lM8nO9pQ0rS1tU2vW3xY4zA5bC6dE7fG8hI9jK0lM1nO2pQ3rS4tU5vW6xY7zA8bC9dE0fG1hI2jK3lM4nO5pQ6rS7tU8vW9xY0zA1 ci-cd@automation.com
+
+# Example for development team member
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF2mQ3aA4bC5dE6fG7hI8jK9lM0nO1pQ2rS3tU4vW5xY developer@team.com
+
+# Instructions for generating your own keys:
+# 
+# For RSA (widely compatible):
+# ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
+#
+# For Ed25519 (recommended, modern):
+# ssh-keygen -t ed25519 -C "your_email@example.com"
+#
+# For ECDSA:
+# ssh-keygen -t ecdsa -b 256 -C "your_email@example.com"
+
+# To use in Docker environment variables, combine multiple keys with \n:
+# SSH_AUTHORIZED_KEYS="ssh-rsa AAAAB3... user1@example.com\nssh-ed25519 AAAAC3... user2@example.com"
+
+# Security Notes:
+# - Never share private keys
+# - Use strong passphrases for private keys
+# - Regularly rotate keys
+# - Use different keys for different purposes/environments
+# - Consider using certificate-based authentication for large deployments

@@ -1,0 +1,212 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - develop
+  schedule:
+    # Weekly rebuild to get latest base image updates
+    - cron: '0 2 * * 0'  # Every Sunday at 2 AM UTC
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: 'Push image to registry'
+        required: false
+        default: true
+        type: boolean
+      platforms:
+        description: 'Platforms to build for'
+        required: false
+        default: 'linux/amd64,linux/arm64'
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # set latest tag for default branch
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value={{date 'YYYYMMDD-HHmmss'}}-{{sha}}
+            type=schedule,pattern={{date 'YYYYMMDD'}}
+          labels: |
+            org.opencontainers.image.title=SSH Test Server
+            org.opencontainers.image.description=Configurable SSH server for integration testing
+            org.opencontainers.image.vendor=${{ github.repository_owner }}
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}#readme
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        id: build
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
+          push: ${{ (github.event_name != 'pull_request') && (github.event.inputs.push_image != 'false') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ (github.event_name != 'pull_request') && (github.event.inputs.push_image != 'false') }}
+
+      - name: Generate SBOM
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        if: github.event_name != 'pull_request'
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: github.event_name != 'pull_request'
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Run Trivy in table format
+        uses: aquasecurity/trivy-action@master
+        if: github.event_name != 'pull_request'
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: table
+
+      - name: Attest build provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Upload SBOM as artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.spdx.json
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        auth_method: [password, publickey, keyboard-interactive]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run integration tests
+        run: |
+          echo "Testing ${{ matrix.platform }} with ${{ matrix.auth_method }} auth"
+          
+          # Pull the image for the specific platform
+          docker pull --platform=${{ matrix.platform }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          # Run basic connectivity test
+          docker run --rm -d --name ssh-test-${{ matrix.auth_method }} \
+            -p 2224:22 \
+            -e SSH_USER=testuser \
+            -e SSH_PASSWORD=testpass123 \
+            -e SSH_PERMIT_PASSWORD_AUTH=${{ matrix.auth_method == 'password' && 'yes' || 'no' }} \
+            -e SSH_PERMIT_PUBKEY_AUTH=${{ matrix.auth_method == 'publickey' && 'yes' || 'no' }} \
+            -e SSH_CHALLENGE_RESPONSE_AUTH=${{ matrix.auth_method == 'keyboard-interactive' && 'yes' || 'no' }} \
+            -e SSH_DEBUG_LEVEL=1 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          # Wait for SSH to start
+          sleep 10
+          
+          # Test connectivity
+          docker exec ssh-test-${{ matrix.auth_method }} netstat -ln | grep :22 || exit 1
+          
+          # Test SSH connection (basic connectivity)
+          timeout 10s nc -zv localhost 2224 || exit 1
+          
+          # Cleanup
+          docker stop ssh-test-${{ matrix.auth_method }}
+          
+          echo "✅ Test passed for ${{ matrix.platform }} with ${{ matrix.auth_method }} auth"
+
+  update-description:
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v4
+        continue-on-error: true
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          readme-filepath: ./README.md

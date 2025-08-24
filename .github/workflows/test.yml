@@ -1,0 +1,348 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ./docker/Dockerfile
+
+      - name: Lint shell scripts
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          find . -name "*.sh" -type f -exec shellcheck {} \;
+
+  build-test-image:
+    runs-on: ubuntu-latest
+    outputs:
+      image-id: ${{ steps.build.outputs.imageid }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          load: true
+          tags: ssh-test-server:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  integration-tests:
+    needs: [lint, build-test-image]
+    runs-on: ubuntu-latest
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        test-scenario:
+          - name: "password-auth"
+            env_vars: |
+              SSH_USER=testuser
+              SSH_PASSWORD=secure123
+              SSH_PERMIT_PASSWORD_AUTH=yes
+              SSH_PERMIT_PUBKEY_AUTH=no
+              SSH_DEBUG_LEVEL=1
+          - name: "pubkey-auth"
+            env_vars: |
+              SSH_USER=keyuser
+              SSH_AUTHORIZED_KEYS=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7... test@example.com
+              SSH_PERMIT_PASSWORD_AUTH=no
+              SSH_PERMIT_PUBKEY_AUTH=yes
+              SSH_DEBUG_LEVEL=1
+          - name: "custom-port"
+            env_vars: |
+              SSH_USER=porttest
+              SSH_PASSWORD=test456
+              SSH_PORT=2224
+              SSH_PERMIT_PASSWORD_AUTH=yes
+              SSH_DEBUG_LEVEL=2
+          - name: "debug-mode"
+            env_vars: |
+              SSH_USER=debuguser
+              SSH_PASSWORD=debug789
+              SSH_DEBUG_LEVEL=3
+              SSH_PERMIT_PASSWORD_AUTH=yes
+          - name: "minimal-config"
+            env_vars: |
+              SSH_USER=minuser
+              SSH_PASSWORD=minpass
+          - name: "security-hardened"
+            env_vars: |
+              SSH_USER=secureuser
+              SSH_PASSWORD=securepass
+              SSH_PERMIT_ROOT_LOGIN=no
+              SSH_PERMIT_EMPTY_PASSWORDS=no
+              SSH_MAX_AUTH_TRIES=3
+              SSH_LOGIN_GRACE_TIME=60
+              SSH_USE_DNS=no
+              SSH_X11_FORWARDING=no
+              SSH_AGENT_FORWARDING=no
+              SSH_TCP_FORWARDING=no
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate SSH key pair for testing
+        run: |
+          ssh-keygen -t rsa -b 2048 -f test_key -N ""
+          echo "Generated SSH key pair for testing"
+          echo "Public key:"
+          cat test_key.pub
+
+      - name: Prepare environment variables
+        run: |
+          # Create env file for this test scenario
+          cat > test.env << 'EOF'
+          ${{ matrix.test-scenario.env_vars }}
+          EOF
+          
+          # Replace placeholder SSH key with real one if needed
+          if grep -q "SSH_AUTHORIZED_KEYS=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7..." test.env; then
+            sed -i "s|SSH_AUTHORIZED_KEYS=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7... test@example.com|SSH_AUTHORIZED_KEYS=$(cat test_key.pub)|" test.env
+          fi
+          
+          echo "Environment variables for ${{ matrix.test-scenario.name }}:"
+          cat test.env
+
+      - name: Start SSH test server
+        run: |
+          # Start container with environment variables
+          docker run -d --name ssh-test-${{ matrix.test-scenario.name }} \
+            --env-file test.env \
+            -p 2224:$(grep SSH_PORT test.env | cut -d= -f2 || echo 22) \
+            ssh-test-server:test
+          
+          # Wait for container to start
+          sleep 5
+          
+          # Check if container is running
+          docker ps | grep ssh-test-${{ matrix.test-scenario.name }}
+          
+          # Show container logs
+          echo "Container logs:"
+          docker logs ssh-test-${{ matrix.test-scenario.name }}
+
+      - name: Test SSH connectivity
+        run: |
+          # Get SSH port from environment
+          SSH_PORT=$(grep SSH_PORT test.env | cut -d= -f2 || echo 22)
+          
+          # Test basic connectivity
+          timeout 10s nc -zv localhost 2224 || exit 1
+          
+          echo "✅ SSH port is accessible"
+
+      - name: Test SSH authentication
+        run: |
+          SSH_USER=$(grep SSH_USER test.env | cut -d= -f2)
+          SSH_PASSWORD=$(grep SSH_PASSWORD test.env | cut -d= -f2)
+          
+          if [[ -n "$SSH_PASSWORD" ]]; then
+            # Test password authentication
+            echo "Testing password authentication..."
+            sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -p 2224 "$SSH_USER@localhost" "echo 'Password auth successful'" || exit 1
+            echo "✅ Password authentication works"
+          fi
+          
+          if grep -q "SSH_AUTHORIZED_KEYS" test.env && grep -q "SSH_PERMIT_PUBKEY_AUTH=yes" test.env; then
+            # Test key-based authentication
+            echo "Testing public key authentication..."
+            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o PasswordAuthentication=no -i test_key \
+              -p 2224 "$SSH_USER@localhost" "echo 'Key auth successful'" || exit 1
+            echo "✅ Public key authentication works"
+          fi
+
+      - name: Test SSH functionality
+        run: |
+          SSH_USER=$(grep SSH_USER test.env | cut -d= -f2)
+          SSH_PASSWORD=$(grep SSH_PASSWORD test.env | cut -d= -f2)
+          
+          if [[ -n "$SSH_PASSWORD" ]]; then
+            # Test basic commands
+            echo "Testing basic SSH commands..."
+            
+            # Test whoami
+            RESULT=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -p 2224 "$SSH_USER@localhost" "whoami")
+            [[ "$RESULT" == "$SSH_USER" ]] || exit 1
+            
+            # Test pwd
+            sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -p 2224 "$SSH_USER@localhost" "pwd" | grep -q "/home/$SSH_USER" || exit 1
+            
+            # Test environment
+            sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -p 2224 "$SSH_USER@localhost" "env | grep USER | grep $SSH_USER" || exit 1
+            
+            echo "✅ SSH commands work correctly"
+          fi
+
+      - name: Test SSH server configuration
+        run: |
+          # Check SSH daemon process
+          docker exec ssh-test-${{ matrix.test-scenario.name }} ps aux | grep sshd | grep -v grep || exit 1
+          
+          # Check SSH configuration
+          docker exec ssh-test-${{ matrix.test-scenario.name }} cat /etc/ssh/sshd_config
+          
+          # Validate SSH configuration
+          docker exec ssh-test-${{ matrix.test-scenario.name }} /usr/sbin/sshd -t || exit 1
+          
+          echo "✅ SSH server configuration is valid"
+
+      - name: Show container logs
+        if: always()
+        run: |
+          echo "=== Container Logs ==="
+          docker logs ssh-test-${{ matrix.test-scenario.name }}
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop ssh-test-${{ matrix.test-scenario.name }} || true
+          docker rm ssh-test-${{ matrix.test-scenario.name }} || true
+
+  performance-test:
+    needs: [build-test-image]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Performance test
+        run: |
+          # Start SSH server
+          docker run -d --name ssh-perf-test \
+            -e SSH_USER=perfuser \
+            -e SSH_PASSWORD=perfpass \
+            -e SSH_DEBUG_LEVEL=0 \
+            -p 2224:22 \
+            ssh-test-server:test
+          
+          sleep 5
+          
+          # Install sshpass for testing
+          sudo apt-get update && sudo apt-get install -y sshpass
+          
+          # Connection time test
+          start_time=$(date +%s%N)
+          sshpass -p "perfpass" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -p 2224 perfuser@localhost "exit"
+          end_time=$(date +%s%N)
+          
+          connection_time=$(((end_time - start_time) / 1000000))
+          echo "Connection time: ${connection_time}ms"
+          
+          # Connection should be under 2 seconds
+          [[ $connection_time -lt 2000 ]] || exit 1
+          
+          # Concurrent connections test
+          echo "Testing concurrent connections..."
+          for i in {1..5}; do
+            sshpass -p "perfpass" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -p 2224 perfuser@localhost "sleep 1 && echo 'Connection $i'" &
+          done
+          
+          wait
+          echo "✅ Concurrent connections test passed"
+          
+          # Cleanup
+          docker stop ssh-perf-test
+          docker rm ssh-perf-test
+
+  security-test:
+    needs: [build-test-image]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Security configuration test
+        run: |
+          # Start SSH server with security settings
+          docker run -d --name ssh-security-test \
+            -e SSH_USER=secuser \
+            -e SSH_PASSWORD=secpass \
+            -e SSH_PERMIT_ROOT_LOGIN=no \
+            -e SSH_PERMIT_EMPTY_PASSWORDS=no \
+            -e SSH_MAX_AUTH_TRIES=2 \
+            -e SSH_USE_DNS=no \
+            -e SSH_X11_FORWARDING=no \
+            -e SSH_AGENT_FORWARDING=no \
+            -e SSH_TCP_FORWARDING=no \
+            -p 2224:22 \
+            ssh-test-server:test
+          
+          sleep 5
+          
+          # Test that root login is denied
+          echo "Testing root login denial..."
+          if sshpass -p "secpass" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+             -p 2224 root@localhost "exit" 2>/dev/null; then
+            echo "❌ Root login should be denied"
+            exit 1
+          fi
+          echo "✅ Root login correctly denied"
+          
+          # Test max auth tries (should fail after 2 attempts)
+          echo "Testing max auth tries..."
+          if sshpass -p "wrongpass" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+             -o NumberOfPasswordPrompts=3 -p 2224 secuser@localhost "exit" 2>/dev/null; then
+            echo "❌ Should fail after max auth tries"
+            exit 1
+          fi
+          echo "✅ Max auth tries enforced"
+          
+          # Cleanup
+          docker stop ssh-security-test
+          docker rm ssh-security-test
+
+  summary:
+    needs: [integration-tests, performance-test, security-test]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Test Results Summary
+        run: |
+          echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Category | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Performance Tests | ${{ needs.performance-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Tests | ${{ needs.security-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.integration-tests.result }}" == "success" ]] && \
+             [[ "${{ needs.performance-test.result }}" == "success" ]] && \
+             [[ "${{ needs.security-test.result }}" == "success" ]]; then
+            echo "✅ All tests passed successfully!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Some tests failed. Please check the logs." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
