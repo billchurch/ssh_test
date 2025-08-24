@@ -19,6 +19,7 @@ LABEL org.opencontainers.image.description="Configurable SSH server for integrat
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install OpenSSH server and utilities with aggressive size optimization
+# hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         openssh-server \

@@ -17,6 +17,7 @@ LABEL org.opencontainers.image.title="SSH Test Server (Alpine)"
 LABEL org.opencontainers.image.description="Configurable SSH server for integration testing - Alpine variant"
 
 # Install OpenSSH server and bash with minimal footprint
+# hadolint ignore=DL3018
 RUN apk add --no-cache \
         openssh-server \
         openssh-sftp-server \
