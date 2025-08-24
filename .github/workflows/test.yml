@@ -80,6 +80,7 @@ jobs:
       matrix:
         test-scenario:
           - name: "password-auth"
+            host_port: 2221
             env_vars: |
               SSH_USER=testuser
               SSH_PASSWORD=secure123
@@ -87,6 +88,7 @@ jobs:
               SSH_PERMIT_PUBKEY_AUTH=no
               SSH_DEBUG_LEVEL=1
           - name: "pubkey-auth"
+            host_port: 2222
             env_vars: |
               SSH_USER=keyuser
               SSH_AUTHORIZED_KEYS=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7... test@example.com
@@ -94,6 +96,7 @@ jobs:
               SSH_PERMIT_PUBKEY_AUTH=yes
               SSH_DEBUG_LEVEL=1
           - name: "custom-port"
+            host_port: 2223
             env_vars: |
               SSH_USER=porttest
               SSH_PASSWORD=test456
@@ -101,16 +104,19 @@ jobs:
               SSH_PERMIT_PASSWORD_AUTH=yes
               SSH_DEBUG_LEVEL=2
           - name: "debug-mode"
+            host_port: 2224
             env_vars: |
               SSH_USER=debuguser
               SSH_PASSWORD=debug789
               SSH_DEBUG_LEVEL=3
               SSH_PERMIT_PASSWORD_AUTH=yes
           - name: "minimal-config"
+            host_port: 2225
             env_vars: |
               SSH_USER=minuser
               SSH_PASSWORD=minpass
           - name: "security-hardened"
+            host_port: 2226
             env_vars: |
               SSH_USER=secureuser
               SSH_PASSWORD=securepass
@@ -162,29 +168,45 @@ jobs:
 
       - name: Start SSH test server
         run: |
+          # Get SSH port from environment (default to 22)
+          SSH_PORT=$(grep SSH_PORT test.env | cut -d= -f2 2>/dev/null || echo 22)
+          echo "Container SSH port: $SSH_PORT"
+          echo "Host port: ${{ matrix.test-scenario.host_port }}"
+          
           # Start container with environment variables
+          echo "Starting container ssh-test-${{ matrix.test-scenario.name }}..."
           docker run -d --name ssh-test-${{ matrix.test-scenario.name }} \
             --env-file test.env \
-            -p 2224:$(grep SSH_PORT test.env | cut -d= -f2 || echo 22) \
+            -p ${{ matrix.test-scenario.host_port }}:${SSH_PORT} \
             ghcr.io/${{ github.repository }}:test
           
           # Wait for container to start
-          sleep 5
+          echo "Waiting for container to start..."
+          sleep 10
           
           # Check if container is running
-          docker ps | grep ssh-test-${{ matrix.test-scenario.name }}
+          echo "Container status:"
+          docker ps -a | grep ssh-test-${{ matrix.test-scenario.name }} || echo "Container not found in docker ps"
           
-          # Show container logs
-          echo "Container logs:"
-          docker logs ssh-test-${{ matrix.test-scenario.name }}
+          # Show container logs immediately
+          echo "=== Container Startup Logs ==="
+          docker logs ssh-test-${{ matrix.test-scenario.name }} 2>&1 || echo "Could not get container logs"
+          
+          # Verify container is actually running
+          if ! docker ps | grep ssh-test-${{ matrix.test-scenario.name }}; then
+            echo "❌ Container failed to start properly"
+            echo "Container inspect:"
+            docker inspect ssh-test-${{ matrix.test-scenario.name }} || true
+            exit 1
+          fi
+          
+          echo "✅ Container started successfully"
 
       - name: Test SSH connectivity
         run: |
-          # Get SSH port from environment
-          SSH_PORT=$(grep SSH_PORT test.env | cut -d= -f2 || echo 22)
-          
           # Test basic connectivity
-          timeout 10s nc -zv localhost 2224 || exit 1
+          echo "Testing connectivity on port ${{ matrix.test-scenario.host_port }}..."
+          timeout 10s nc -zv localhost ${{ matrix.test-scenario.host_port }} || exit 1
           
           echo "✅ SSH port is accessible"
 
@@ -195,18 +217,18 @@ jobs:
           
           if [[ -n "$SSH_PASSWORD" ]]; then
             # Test password authentication
-            echo "Testing password authentication..."
+            echo "Testing password authentication on port ${{ matrix.test-scenario.host_port }}..."
             sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -p 2224 "$SSH_USER@localhost" "echo 'Password auth successful'" || exit 1
+              -p ${{ matrix.test-scenario.host_port }} "$SSH_USER@localhost" "echo 'Password auth successful'" || exit 1
             echo "✅ Password authentication works"
           fi
           
           if grep -q "SSH_AUTHORIZED_KEYS" test.env && grep -q "SSH_PERMIT_PUBKEY_AUTH=yes" test.env; then
             # Test key-based authentication
-            echo "Testing public key authentication..."
+            echo "Testing public key authentication on port ${{ matrix.test-scenario.host_port }}..."
             ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -o PasswordAuthentication=no -i test_key \
-              -p 2224 "$SSH_USER@localhost" "echo 'Key auth successful'" || exit 1
+              -p ${{ matrix.test-scenario.host_port }} "$SSH_USER@localhost" "echo 'Key auth successful'" || exit 1
             echo "✅ Public key authentication works"
           fi
 
@@ -217,20 +239,20 @@ jobs:
           
           if [[ -n "$SSH_PASSWORD" ]]; then
             # Test basic commands
-            echo "Testing basic SSH commands..."
+            echo "Testing basic SSH commands on port ${{ matrix.test-scenario.host_port }}..."
             
             # Test whoami
             RESULT=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -p 2224 "$SSH_USER@localhost" "whoami")
+              -p ${{ matrix.test-scenario.host_port }} "$SSH_USER@localhost" "whoami")
             [[ "$RESULT" == "$SSH_USER" ]] || exit 1
             
             # Test pwd
             sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -p 2224 "$SSH_USER@localhost" "pwd" | grep -q "/home/$SSH_USER" || exit 1
+              -p ${{ matrix.test-scenario.host_port }} "$SSH_USER@localhost" "pwd" | grep -q "/home/$SSH_USER" || exit 1
             
             # Test environment
             sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -p 2224 "$SSH_USER@localhost" "env | grep USER | grep $SSH_USER" || exit 1
+              -p ${{ matrix.test-scenario.host_port }} "$SSH_USER@localhost" "env | grep USER | grep $SSH_USER" || exit 1
             
             echo "✅ SSH commands work correctly"
           fi
