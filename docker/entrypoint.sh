@@ -3,6 +3,7 @@ set -e
 
 # SSH Test Server Entrypoint Script
 # Configures SSH server based on environment variables
+# Compatible with both Alpine and Debian-based distributions
 
 # Color codes for logging
 RED='\033[0;31m'
@@ -29,6 +30,17 @@ log_debug() {
         echo -e "${BLUE}[DEBUG]${NC} $1" >&2
     fi
 }
+
+# Detect OS and set appropriate paths and commands
+if [ -f /etc/alpine-release ]; then
+    IS_ALPINE=true
+    SFTP_SERVER_PATH="/usr/lib/ssh/sftp-server"
+    log_debug "Detected Alpine Linux"
+else
+    IS_ALPINE=false
+    SFTP_SERVER_PATH="/usr/lib/openssh/sftp-server"
+    log_debug "Detected Debian-based system"
+fi
 
 # Validate environment variables
 validate_env() {
@@ -85,8 +97,14 @@ create_ssh_user() {
         return 0
     fi
     
-    # Create user with home directory (Ubuntu syntax)
-    useradd -m -s /bin/bash "${SSH_USER}"
+    # Create user with home directory (OS-appropriate syntax)
+    if [ "$IS_ALPINE" = true ]; then
+        # Alpine uses adduser (busybox)
+        adduser -h "/home/${SSH_USER}" -s /bin/bash -D "${SSH_USER}"
+    else
+        # Debian/Ubuntu uses useradd
+        useradd -m -s /bin/bash "${SSH_USER}"
+    fi
     
     # Set password if provided
     if [[ -n "${SSH_PASSWORD}" ]]; then
@@ -184,7 +202,7 @@ MaxSessions 10
 PubkeyAuthentication ${SSH_PERMIT_PUBKEY_AUTH}
 PasswordAuthentication ${SSH_PERMIT_PASSWORD_AUTH}
 ChallengeResponseAuthentication ${SSH_CHALLENGE_RESPONSE_AUTH}
-UsePAM ${SSH_USE_PAM}
+$(if [ "$IS_ALPINE" != true ]; then echo "UsePAM ${SSH_USE_PAM}"; fi)
 PermitEmptyPasswords ${SSH_PERMIT_EMPTY_PASSWORDS}
 
 # Specify authentication methods if not 'any'
@@ -209,7 +227,7 @@ HostbasedAuthentication no
 PermitUserEnvironment no
 
 # Subsystem
-Subsystem sftp /usr/lib/openssh/sftp-server
+Subsystem sftp ${SFTP_SERVER_PATH}
 
 # Custom configuration
 ${SSH_CUSTOM_CONFIG}

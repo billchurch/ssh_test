@@ -1,16 +1,58 @@
 # SSH Test Server - Docker Compose Examples
 # This file demonstrates various configurations for the SSH test server
+# Choose between Debian (default) and Alpine versions
 version: '3.8'
 
 services:
-  # Basic password authentication setup
+  # Debian-based SSH server (default, larger but more compatible)
+  ssh-debian:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ssh-test-server:debian
+    container_name: ssh-test-debian
+    ports:
+      - "2224:22"
+    environment:
+      - SSH_USER=testuser
+      - SSH_PASSWORD=testpass123
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_PERMIT_PUBKEY_AUTH=yes
+      - SSH_DEBUG_LEVEL=1
+    restart: unless-stopped
+    profiles:
+      - debian
+      - basic
+      - all
+
+  # Alpine-based SSH server (ultra-minimal size)
+  ssh-alpine:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.alpine
+    image: ssh-test-server:alpine
+    container_name: ssh-test-alpine
+    ports:
+      - "2225:22"
+    environment:
+      - SSH_USER=testuser
+      - SSH_PASSWORD=testpass123
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_PERMIT_PUBKEY_AUTH=yes
+      - SSH_DEBUG_LEVEL=1
+    restart: unless-stopped
+    profiles:
+      - alpine
+      - all
+
+  # Basic password authentication setup (Debian)
   ssh-password-basic:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: ssh-test-password
     ports:
-      - "2224:22"
+      - "2226:22"
     environment:
       - SSH_USER=testuser
       - SSH_PASSWORD=testpass123
@@ -19,7 +61,7 @@ services:
       - SSH_DEBUG_LEVEL=1
     restart: unless-stopped
     profiles:
-      - basic
+      - basic-password
 
   # Public key only authentication
   ssh-pubkey-only:

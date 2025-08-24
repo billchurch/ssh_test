@@ -1,5 +1,5 @@
-# SSH Test Server - Debian slim base for minimal size with full SSH support
-FROM debian:bookworm-slim
+# SSH Test Server - Alpine base for ultra-minimal size
+FROM alpine:3.19
 
 # Build arguments for dynamic versioning
 ARG VERSION=0.1.0
@@ -7,29 +7,21 @@ ARG BUILD_DATE
 ARG VCS_REF
 
 LABEL maintainer="SSH Test Server"
-LABEL description="Configurable SSH server for integration testing"
+LABEL description="Configurable SSH server for integration testing - Alpine variant"
 LABEL version="${VERSION}"
+LABEL variant="alpine"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.created="${BUILD_DATE}"
 LABEL org.opencontainers.image.revision="${VCS_REF}"
-LABEL org.opencontainers.image.title="SSH Test Server"
-LABEL org.opencontainers.image.description="Configurable SSH server for integration testing"
+LABEL org.opencontainers.image.title="SSH Test Server (Alpine)"
+LABEL org.opencontainers.image.description="Configurable SSH server for integration testing - Alpine variant"
 
-# Avoid interactive prompts during installation
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install OpenSSH server and utilities with aggressive size optimization
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+# Install OpenSSH server and bash with minimal footprint
+RUN apk add --no-cache \
         openssh-server \
+        openssh-sftp-server \
         bash \
-        && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-              /usr/share/doc/* \
-              /usr/share/man/* \
-              /usr/share/locale/* \
-              /tmp/* \
-              /var/tmp/* \
+    && rm -rf /var/cache/apk/* \
     && mkdir -p /var/run/sshd /etc/ssh/ssh_host_keys
 
 # Copy entrypoint script with correct permissions

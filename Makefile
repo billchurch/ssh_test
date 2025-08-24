@@ -19,7 +19,19 @@ SSH_USER ?= testuser
 SSH_PASSWORD ?= testpass123
 
 # Build targets
-build: ## Build the Docker image
+build: build-debian ## Build the default (Debian) Docker image
+
+build-all: build-debian build-alpine ## Build both Debian and Alpine images
+
+build-debian: ## Build Debian-based image
+	docker build -f docker/Dockerfile -t $(IMAGE_NAME):debian -t $(IMAGE_NAME):latest .
+	@echo "✅ Built Debian image: $(IMAGE_NAME):debian (also tagged as latest)"
+
+build-alpine: ## Build Alpine-based image
+	docker build -f docker/Dockerfile.alpine -t $(IMAGE_NAME):alpine .
+	@echo "✅ Built Alpine image: $(IMAGE_NAME):alpine"
+
+build-dev: ## Build development version (Debian)
 	docker build -f docker/Dockerfile -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
 build-multi: ## Build multi-architecture image (requires buildx)
@@ -27,7 +39,25 @@ build-multi: ## Build multi-architecture image (requires buildx)
 		-f docker/Dockerfile -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
 # Runtime targets
-run: ## Run the SSH test server container
+run: run-debian ## Run the default (Debian) SSH test server container
+
+run-debian: ## Run Debian-based SSH test server
+	docker run -d --name $(CONTAINER_NAME)-debian \
+		-p $(SSH_PORT):22 \
+		-e SSH_USER=$(SSH_USER) \
+		-e SSH_PASSWORD=$(SSH_PASSWORD) \
+		-e SSH_DEBUG_LEVEL=1 \
+		$(IMAGE_NAME):debian
+
+run-alpine: ## Run Alpine-based SSH test server  
+	docker run -d --name $(CONTAINER_NAME)-alpine \
+		-p 2225:22 \
+		-e SSH_USER=$(SSH_USER) \
+		-e SSH_PASSWORD=$(SSH_PASSWORD) \
+		-e SSH_DEBUG_LEVEL=1 \
+		$(IMAGE_NAME):alpine
+
+run-dev: ## Run development version
 	docker run -d --name $(CONTAINER_NAME) \
 		-p $(SSH_PORT):22 \
 		-e SSH_USER=$(SSH_USER) \
@@ -43,23 +73,42 @@ run-debug: ## Run container with debug mode enabled
 		-e SSH_DEBUG_LEVEL=3 \
 		$(IMAGE_NAME):$(IMAGE_TAG)
 
-stop: ## Stop the running container
-	docker stop $(CONTAINER_NAME) || true
-	docker stop $(CONTAINER_NAME)-debug || true
+stop: ## Stop all running containers
+	docker stop $(CONTAINER_NAME)-debian $(CONTAINER_NAME)-alpine || true
+	docker stop $(CONTAINER_NAME) $(CONTAINER_NAME)-debug || true
 
 clean: ## Remove containers and images
+	docker rm -f $(CONTAINER_NAME)-debian $(CONTAINER_NAME)-alpine || true
 	docker rm -f $(CONTAINER_NAME) $(CONTAINER_NAME)-debug || true
+	docker rmi $(IMAGE_NAME):debian $(IMAGE_NAME):alpine $(IMAGE_NAME):latest || true
 	docker rmi $(IMAGE_NAME):$(IMAGE_TAG) || true
 
-logs: ## Show container logs
-	docker logs -f $(CONTAINER_NAME)
+logs: logs-debian ## Show default (Debian) container logs
 
-shell: ## Get a shell in the running container
-	docker exec -it $(CONTAINER_NAME) /bin/sh
+logs-debian: ## Show Debian container logs
+	docker logs -f $(CONTAINER_NAME)-debian
+
+logs-alpine: ## Show Alpine container logs  
+	docker logs -f $(CONTAINER_NAME)-alpine
+
+shell: shell-debian ## Get a shell in the default (Debian) container
+
+shell-debian: ## Get a shell in the Debian container
+	docker exec -it $(CONTAINER_NAME)-debian /bin/bash
+
+shell-alpine: ## Get a shell in the Alpine container
+	docker exec -it $(CONTAINER_NAME)-alpine /bin/sh
 
 # Testing targets
-test: ## Run the integration test suite
-	./tests/integration/run-tests.sh --image $(IMAGE_NAME):$(IMAGE_TAG)
+test: test-debian ## Run integration tests on default (Debian) image
+
+test-all: test-debian test-alpine ## Run integration tests on both images
+
+test-debian: ## Run integration tests on Debian image
+	./tests/integration/run-tests.sh --image $(IMAGE_NAME):debian
+
+test-alpine: ## Run integration tests on Alpine image
+	./tests/integration/run-tests.sh --image $(IMAGE_NAME):alpine
 
 test-parallel: ## Run tests in parallel
 	./tests/integration/run-tests.sh --image $(IMAGE_NAME):$(IMAGE_TAG) --parallel
@@ -67,13 +116,19 @@ test-parallel: ## Run tests in parallel
 test-verbose: ## Run tests with verbose output
 	./tests/integration/run-tests.sh --image $(IMAGE_NAME):$(IMAGE_TAG) --verbose
 
-test-connection: ## Test SSH connection (requires running container)
+test-connection-debian: ## Test SSH connection to Debian container
 	./scripts/test-connection.sh --host localhost --port $(SSH_PORT) --user $(SSH_USER) --password $(SSH_PASSWORD)
 
-test-auth: ## Test authentication methods (requires running container)
-	./scripts/test-auth-methods.sh --container $(CONTAINER_NAME) --user $(SSH_USER) --generate-keys
+test-connection-alpine: ## Test SSH connection to Alpine container  
+	./scripts/test-connection.sh --host localhost --port 2225 --user $(SSH_USER) --password $(SSH_PASSWORD)
 
-integration-test: build test ## Build image and run integration tests
+test-auth-debian: ## Test authentication methods on Debian container
+	./scripts/test-auth-methods.sh --container $(CONTAINER_NAME)-debian --user $(SSH_USER) --generate-keys
+
+test-auth-alpine: ## Test authentication methods on Alpine container
+	./scripts/test-auth-methods.sh --container $(CONTAINER_NAME)-alpine --user $(SSH_USER) --generate-keys
+
+integration-test: build-all test-all ## Build both images and run integration tests
 
 # Development targets
 dev-setup: ## Set up development environment
@@ -81,26 +136,42 @@ dev-setup: ## Set up development environment
 	chmod +x tests/integration/*.sh
 	chmod +x docker/entrypoint.sh
 
-lint: ## Lint shell scripts and Dockerfile
+lint: ## Lint shell scripts and Dockerfiles
 	@echo "Linting shell scripts..."
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		find . -name "*.sh" -type f -exec shellcheck {} \; ; \
 	else \
 		echo "shellcheck not found, skipping shell script linting"; \
 	fi
-	@echo "Linting Dockerfile..."
+	@echo "Linting Dockerfiles..."
 	@if command -v hadolint >/dev/null 2>&1; then \
-		hadolint docker/Dockerfile; \
+		hadolint docker/Dockerfile docker/Dockerfile.alpine; \
 	else \
 		echo "hadolint not found, skipping Dockerfile linting"; \
 	fi
 
-security-scan: ## Run security scan on the built image
+security-scan: security-scan-debian ## Run security scan on default (Debian) image
+
+security-scan-all: security-scan-debian security-scan-alpine ## Run security scan on both images
+
+security-scan-debian: ## Run security scan on Debian image
 	@if command -v trivy >/dev/null 2>&1; then \
-		trivy image $(IMAGE_NAME):$(IMAGE_TAG); \
+		trivy image $(IMAGE_NAME):debian; \
 	else \
 		echo "trivy not found, skipping security scan"; \
 	fi
+
+security-scan-alpine: ## Run security scan on Alpine image
+	@if command -v trivy >/dev/null 2>&1; then \
+		trivy image $(IMAGE_NAME):alpine; \
+	else \
+		echo "trivy not found, skipping security scan"; \
+	fi
+
+compare-sizes: ## Compare image sizes
+	@echo "Image Size Comparison:"
+	@echo "======================"
+	@docker images --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}" | grep $(IMAGE_NAME) | head -10
 
 # Docker Compose targets
 compose-up: ## Start services using Docker Compose

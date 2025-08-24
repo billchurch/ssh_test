@@ -14,6 +14,9 @@ on:
   schedule:
     # Weekly rebuild to get latest base image updates
     - cron: '0 2 * * 0'  # Every Sunday at 2 AM UTC
+  repository_dispatch:
+    # Triggered by release-please when a release is created
+    types: [release-created]
   workflow_dispatch:
     inputs:
       push_image:
@@ -71,11 +74,16 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}-{{sha}}
             type=schedule,pattern={{date 'YYYYMMDD'}}
+            # Add release-please version tag when triggered by repository dispatch
+            type=raw,value=${{ github.event.client_payload.version }},enable=${{ github.event_name == 'repository_dispatch' }}
+            type=raw,value=${{ github.event.client_payload.tag_name }},enable=${{ github.event_name == 'repository_dispatch' }}
           labels: |
             org.opencontainers.image.title=SSH Test Server
             org.opencontainers.image.description=Configurable SSH server for integration testing
             org.opencontainers.image.vendor=${{ github.repository_owner }}
             org.opencontainers.image.documentation=https://github.com/${{ github.repository }}#readme
+            org.opencontainers.image.version=${{ github.event.client_payload.version || '' }}
+            org.opencontainers.image.revision=${{ github.event.client_payload.sha || github.sha }}
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
@@ -87,6 +95,10 @@ jobs:
           push: ${{ (github.event_name != 'pull_request') && (github.event.inputs.push_image != 'false') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.event.client_payload.version || fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || '0.1.0' }}
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            VCS_REF=${{ github.event.client_payload.sha || github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
