@@ -5,6 +5,22 @@ All notable changes to the SSH Test Server project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.0.0 (2025-08-24)
+
+
+### Features
+
+* implement automated release workflow and project enhancement ([9c5af9d](https://github.com/billchurch/ssh_test/commit/9c5af9db30d257ae6c844838e8719b7b69ba8ccf))
+
+
+### Bug Fixes
+
+* corrected repo for integration test ([1626181](https://github.com/billchurch/ssh_test/commit/1626181f12c3dc89a95f2f843b1461a0db55890e))
+* resolve Hadolint warnings for package version pinning ([a8719f4](https://github.com/billchurch/ssh_test/commit/a8719f4d7e816d1b36dc06f6d42637746d93672e))
+* resolve SSH public key authentication failures ([e6ba24c](https://github.com/billchurch/ssh_test/commit/e6ba24c70cad640dc46710821bc82dc28a97b100))
+* update GHCR authentication to use PAT ([873a7eb](https://github.com/billchurch/ssh_test/commit/873a7eb8b2e575a8b69cf2df376aef01024c1561))
+* update integration tests ([38a9ce2](https://github.com/billchurch/ssh_test/commit/38a9ce2b4ba8d94f403e57517d1d0d2c686417b2))
+
 ## [Unreleased]
 
 ### Added
