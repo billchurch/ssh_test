@@ -37,6 +37,8 @@ RUN apt-get update && \
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # Default environment variables
+# Note: These are test server configuration variables, not secrets
+# hadolint ignore=SC2034
 ENV SSH_USER=testuser \
     SSH_PASSWORD="" \
     SSH_AUTHORIZED_KEYS="" \
