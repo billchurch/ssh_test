@@ -159,8 +159,19 @@ jobs:
           EOF
           
           # Replace placeholder SSH key with real one if needed
-          if grep -q "SSH_AUTHORIZED_KEYS=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7..." test.env; then
-            sed -i "s|SSH_AUTHORIZED_KEYS=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7... test@example.com|SSH_AUTHORIZED_KEYS=$(cat test_key.pub)|" test.env
+          if grep -q "SSH_AUTHORIZED_KEYS.*test@example.com" test.env; then
+            echo "🔑 Replacing placeholder SSH key with generated key..."
+            GENERATED_KEY=$(cat test_key.pub)
+            echo "Generated key: $GENERATED_KEY"
+            
+            # Use a more flexible sed replacement
+            sed -i 's|SSH_AUTHORIZED_KEYS=.*test@example.com|SSH_AUTHORIZED_KEYS='"$GENERATED_KEY"'|' test.env
+            
+            echo "✅ SSH key replacement completed"
+            echo "Updated SSH_AUTHORIZED_KEYS line:"
+            grep "SSH_AUTHORIZED_KEYS" test.env || echo "No SSH_AUTHORIZED_KEYS found!"
+          else
+            echo "No SSH key placeholder found to replace"
           fi
           
           echo "=== Debug: Environment variables for ${{ matrix.test-scenario.name }} ==="
@@ -170,6 +181,11 @@ jobs:
           echo "File size: $(wc -l < test.env) lines"
           echo "Non-empty lines: $(grep -v '^$' test.env | wc -l)"
           echo "Variables starting with SSH_: $(grep '^SSH_' test.env | wc -l)"
+          if grep -q "SSH_AUTHORIZED_KEYS" test.env; then
+            echo "SSH_AUTHORIZED_KEYS found: ✅"
+          else
+            echo "SSH_AUTHORIZED_KEYS found: ❌"
+          fi
           echo "=== End Debug ==="
 
       - name: Start SSH test server
@@ -251,10 +267,25 @@ jobs:
           
           if grep -q "SSH_AUTHORIZED_KEYS" test.env && grep -q "SSH_PERMIT_PUBKEY_AUTH=yes" test.env; then
             # Test key-based authentication
-            echo "Testing public key authentication on port ${{ matrix.test-scenario.host_port }}..."
-            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            echo "🔑 Testing public key authentication on port ${{ matrix.test-scenario.host_port }}..."
+            echo "SSH_USER: $SSH_USER"
+            echo "Using private key: test_key"
+            echo "Public key fingerprint:"
+            ssh-keygen -lf test_key.pub
+            echo "Container authorized key:"
+            grep "SSH_AUTHORIZED_KEYS" test.env
+            echo ""
+            echo "Attempting SSH connection..."
+            
+            # Add more verbose SSH debugging
+            ssh -vvv -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -o PasswordAuthentication=no -i test_key \
-              -p ${{ matrix.test-scenario.host_port }} "$SSH_USER@localhost" "echo 'Key auth successful'" || exit 1
+              -p ${{ matrix.test-scenario.host_port }} "$SSH_USER@localhost" "echo 'Key auth successful'" || {
+              echo "❌ SSH key authentication failed"
+              echo "Container logs:"
+              docker logs ssh-test-${{ matrix.test-scenario.name }} | tail -20
+              exit 1
+            }
             echo "✅ Public key authentication works"
           fi
 
