@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         test-scenario:
           - name: "password-auth"
@@ -163,8 +163,14 @@ jobs:
             sed -i "s|SSH_AUTHORIZED_KEYS=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7... test@example.com|SSH_AUTHORIZED_KEYS=$(cat test_key.pub)|" test.env
           fi
           
-          echo "Environment variables for ${{ matrix.test-scenario.name }}:"
-          cat test.env
+          echo "=== Debug: Environment variables for ${{ matrix.test-scenario.name }} ==="
+          echo "File contents:"
+          cat -n test.env
+          echo ""
+          echo "File size: $(wc -l < test.env) lines"
+          echo "Non-empty lines: $(grep -v '^$' test.env | wc -l)"
+          echo "Variables starting with SSH_: $(grep '^SSH_' test.env | wc -l)"
+          echo "=== End Debug ==="
 
       - name: Start SSH test server
         run: |
@@ -173,12 +179,29 @@ jobs:
           echo "Container SSH port: $SSH_PORT"
           echo "Host port: ${{ matrix.test-scenario.host_port }}"
           
-          # Start container with environment variables
+          # Check if image exists locally
+          echo "Checking for image ghcr.io/${{ github.repository }}:test..."
+          docker images | grep "${{ github.repository }}" || echo "Image not found locally"
+          
+          # Try to start container with environment variables
           echo "Starting container ssh-test-${{ matrix.test-scenario.name }}..."
-          docker run -d --name ssh-test-${{ matrix.test-scenario.name }} \
+          echo "Command: docker run -d --name ssh-test-${{ matrix.test-scenario.name }} --env-file test.env -p ${{ matrix.test-scenario.host_port }}:${SSH_PORT} ghcr.io/${{ github.repository }}:test"
+          
+          # Run the command and capture output
+          CONTAINER_ID=$(docker run -d --name ssh-test-${{ matrix.test-scenario.name }} \
             --env-file test.env \
             -p ${{ matrix.test-scenario.host_port }}:${SSH_PORT} \
-            ghcr.io/${{ github.repository }}:test
+            ghcr.io/${{ github.repository }}:test 2>&1)
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Container started with ID: $CONTAINER_ID"
+          else
+            echo "❌ Failed to start container"
+            echo "Docker output: $CONTAINER_ID"
+            echo "Checking docker daemon logs..."
+            docker system events --since 1m --until now | tail -10 || true
+            exit 1
+          fi
           
           # Wait for container to start
           echo "Waiting for container to start..."
