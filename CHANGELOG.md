@@ -5,6 +5,13 @@ All notable changes to the SSH Test Server project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1](https://github.com/billchurch/ssh_test/compare/v1.0.0...v1.0.1) (2025-08-24)
+
+
+### Bug Fixes
+
+* simplify CI image references and suppress Hadolint warnings ([a5053b9](https://github.com/billchurch/ssh_test/commit/a5053b994cd2173792ed60419c08332da4e86ce6))
+
 ## 1.0.0 (2025-08-24)
 
 
