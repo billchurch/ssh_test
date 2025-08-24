@@ -111,7 +111,10 @@ create_ssh_user() {
         echo "${SSH_USER}:${SSH_PASSWORD}" | chpasswd
         log_info "Password set for user '${SSH_USER}'"
     else
-        log_warn "No password set for user '${SSH_USER}'"
+        # Set a dummy password to unlock the account for SSH key authentication
+        # The '*' password hash prevents password login but allows key-based auth
+        usermod -p '*' "${SSH_USER}"
+        log_warn "No password set for user '${SSH_USER}' - account unlocked for key-only authentication"
     fi
     
     # Create .ssh directory

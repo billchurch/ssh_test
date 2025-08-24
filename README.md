@@ -162,6 +162,8 @@ docker run -d --name ssh-key-test \
 ssh -i test_key -p 2224 keyuser@localhost
 ```
 
+**Note:** When no password is provided (`SSH_PASSWORD` not set), the user account is automatically unlocked by setting a dummy password hash (`*`) to enable SSH key authentication while still preventing password logins.
+
 ### Security Hardened Configuration
 
 ```bash
@@ -397,6 +399,29 @@ docker run ... -e SSH_DEBUG_LEVEL=3 ...
 
 # Check authentication configuration
 docker exec container-name cat /etc/ssh/sshd_config
+```
+
+**SSH Public Key Authentication Issues:**
+
+When using public key authentication without setting a password (SSH_PASSWORD not provided), the container automatically unlocks the user account to allow key-based authentication. This is necessary because:
+
+1. Linux locks user accounts that have no password set (marked with `!` in `/etc/shadow`)
+2. SSH daemon refuses authentication to locked accounts, even with valid SSH keys
+3. The entrypoint script sets a dummy password hash (`*`) which:
+   - Unlocks the account for SSH key authentication
+   - Still prevents password-based login (no valid password can match `*`)
+
+If you experience issues with key authentication:
+```bash
+# Check if user account is locked
+docker exec container-name grep username /etc/shadow
+# If you see '!' or '!!' in the password field, the account is locked
+
+# Manually unlock (if needed)
+docker exec container-name usermod -p '*' username
+
+# Verify SSH key is properly set
+docker exec container-name cat /home/username/.ssh/authorized_keys
 ```
 
 ### Debug Mode

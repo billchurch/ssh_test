@@ -164,8 +164,11 @@ jobs:
             GENERATED_KEY=$(cat test_key.pub)
             echo "Generated key: $GENERATED_KEY"
             
-            # Use a more flexible sed replacement
-            sed -i 's|SSH_AUTHORIZED_KEYS=.*test@example.com|SSH_AUTHORIZED_KEYS='"$GENERATED_KEY"'|' test.env
+            # Use grep to remove the placeholder line and append the real key
+            # This avoids sed issues with special characters in SSH keys
+            grep -v "SSH_AUTHORIZED_KEYS" test.env > test.env.tmp
+            echo "SSH_AUTHORIZED_KEYS=$GENERATED_KEY" >> test.env.tmp
+            mv test.env.tmp test.env
             
             echo "✅ SSH key replacement completed"
             echo "Updated SSH_AUTHORIZED_KEYS line:"
@@ -279,7 +282,7 @@ jobs:
             
             # Add more verbose SSH debugging
             ssh -vvv -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -o PasswordAuthentication=no -i test_key \
+              -o PasswordAuthentication=no -o IdentitiesOnly=yes -i test_key \
               -p ${{ matrix.test-scenario.host_port }} "$SSH_USER@localhost" "echo 'Key auth successful'" || {
               echo "❌ SSH key authentication failed"
               echo ""
@@ -302,6 +305,12 @@ jobs:
                 id $SSH_USER
                 echo 'File ownership:'
                 ls -la /home/$SSH_USER/.ssh/ 2>/dev/null | head -5
+                echo ''
+                echo 'SSH daemon configuration:'
+                grep -E '(PubkeyAuthentication|AuthorizedKeysFile|StrictModes|LogLevel)' /etc/ssh/sshd_config
+                echo ''
+                echo 'SSH daemon process:'
+                ps aux | grep sshd | grep -v grep
               "
               echo ""
               echo "Recent container logs:"
