@@ -21,6 +21,30 @@ jobs:
       patch: ${{ steps.release.outputs.patch }}
       sha: ${{ steps.release.outputs.sha }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          
+      - name: Setup SSH signing
+        if: secrets.SSH_SIGNING_KEY != ''
+        run: |
+          # Create SSH directory
+          mkdir -p ~/.ssh
+          
+          # Write the private key
+          echo "${{ secrets.SSH_SIGNING_KEY }}" > ~/.ssh/signing_key
+          chmod 600 ~/.ssh/signing_key
+          
+          # Configure git to use SSH signing
+          git config --global gpg.format ssh
+          git config --global user.signingkey ~/.ssh/signing_key
+          git config --global commit.gpgsign true
+          
+          # Create allowed signers file for verification (optional)
+          echo "github-actions@ssh-test $(cat ~/.ssh/signing_key | ssh-keygen -y -f /dev/stdin)" > ~/.ssh/allowed_signers
+          git config --global gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
+          
       - uses: googleapis/release-please-action@v4
         id: release
         with:
