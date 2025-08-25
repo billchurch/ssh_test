@@ -235,21 +235,3 @@ jobs:
           docker stop ssh-test-${{ matrix.auth_method }} || true
           
           echo "✅ Test passed for ${{ matrix.platform }} with ${{ matrix.auth_method }} auth"
-
-  update-description:
-    needs: [build, test]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Update Docker Hub description
-        uses: peter-evans/dockerhub-description@v4
-        continue-on-error: true
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          readme-filepath: ./README.md
