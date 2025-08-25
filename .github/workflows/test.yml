@@ -1,8 +1,8 @@
 name: Integration Tests
 
 on:
-  push:
-    branches: [main, develop]
+  # Run comprehensive tests only on PRs to avoid redundant testing
+  # Smoke tests run in build-and-push.yml after images are built
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
