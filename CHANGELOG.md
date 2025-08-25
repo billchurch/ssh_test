@@ -5,6 +5,16 @@ All notable changes to the SSH Test Server project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2](https://github.com/billchurch/ssh_test/compare/v1.0.1...v1.0.2) (2025-08-25)
+
+
+### Bug Fixes
+
+* container build ([3c60d4e](https://github.com/billchurch/ssh_test/commit/3c60d4ed61fd9d4f7a1c1e0fd0b77bd66b7c8f43))
+* improve cross-platform CI testing reliability ([e3a008b](https://github.com/billchurch/ssh_test/commit/e3a008b3676167e489f7a2802a4e03d89db06ed4))
+* improve SSH readiness check in CI workflow ([9023c6a](https://github.com/billchurch/ssh_test/commit/9023c6a7efd4bcc2dc4a89e84a4546c1cf08b42c))
+* removed secret conditional ([fcea00e](https://github.com/billchurch/ssh_test/commit/fcea00ed282b1ee0f8053f5a75666a755268eb81))
+
 ## [1.0.1](https://github.com/billchurch/ssh_test/compare/v1.0.0...v1.0.1) (2025-08-24)
 
 
