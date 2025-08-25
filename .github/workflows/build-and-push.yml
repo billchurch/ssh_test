@@ -143,7 +143,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: anchore/sbom-action@v0
         with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || 'latest' }}${{ matrix.suffix }}
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.variant }}
           format: spdx-json
           output-file: sbom-${{ matrix.variant }}.spdx.json
 
@@ -151,7 +151,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         if: github.event_name != 'pull_request'
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || 'latest' }}${{ matrix.suffix }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.variant }}
           format: sarif
           output: trivy-results-${{ matrix.variant }}.sarif
 
@@ -166,7 +166,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         if: github.event_name != 'pull_request'
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || 'latest' }}${{ matrix.suffix }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.variant }}
           format: table
 
       - name: Attest build provenance
@@ -184,6 +184,7 @@ jobs:
           name: sbom-${{ matrix.variant }}-${{ github.sha }}
           path: sbom-${{ matrix.variant }}.spdx.json
 
+  # Smoke test only - comprehensive tests run in test.yml on PRs
   test:
     needs: build
     runs-on: ubuntu-latest
@@ -192,8 +193,6 @@ jobs:
     strategy:
       matrix:
         variant: [debian, alpine]
-        platform: [linux/amd64, linux/arm64]
-        auth_method: [password, publickey]
         include:
           - variant: debian
             suffix: ""
@@ -204,14 +203,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
@@ -219,9 +210,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
-      - name: Run integration tests
+      - name: Run smoke test
         run: |
-          echo "Testing ${{ matrix.variant }} (${{ matrix.platform }}) with ${{ matrix.auth_method }} auth"
+          echo "Running smoke test for ${{ matrix.variant }} variant"
           
           # Determine the tag to use
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
@@ -230,56 +221,46 @@ jobs:
             TAG="${{ github.ref_name }}${{ matrix.suffix }}"
           fi
           
-          # Pull the image for the specific platform
-          docker pull --platform=${{ matrix.platform }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}
+          # Pull the image
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}
           
-          # Run basic connectivity test with platform specification
+          # Run basic smoke test
           docker run --rm -d \
-            --platform=${{ matrix.platform }} \
-            --name ssh-test-${{ matrix.variant }}-${{ matrix.auth_method }} \
+            --name ssh-smoke-${{ matrix.variant }} \
             -p 2224:22 \
             -e SSH_USER=testuser \
             -e SSH_PASSWORD=testpass123 \
-            -e SSH_PERMIT_PASSWORD_AUTH=${{ matrix.auth_method == 'password' && 'yes' || 'no' }} \
-            -e SSH_PERMIT_PUBKEY_AUTH=${{ matrix.auth_method == 'publickey' && 'yes' || 'no' }} \
             -e SSH_DEBUG_LEVEL=1 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}
           
-          # Wait for container to be ready with retries
-          MAX_RETRIES=30
-          RETRY_COUNT=0
+          # Wait for container to be ready
+          echo "Waiting for container to start..."
+          sleep 5
           
-          echo "Waiting for container to be ready..."
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if docker ps | grep -q ssh-test-${{ matrix.variant }}-${{ matrix.auth_method }}; then
-              # Check if SSH port is accessible from host
-              if nc -zv localhost 2224 2>/dev/null; then
-                echo "Container is ready and SSH port is accessible!"
-                break
-              fi
-            fi
-            
-            RETRY_COUNT=$((RETRY_COUNT + 1))
-            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-              echo "Container failed to become ready. Showing logs:"
-              docker logs ssh-test-${{ matrix.variant }}-${{ matrix.auth_method }} || true
-              docker ps -a | grep ssh-test || true
-              exit 1
-            fi
-            
-            echo "Waiting for SSH to be ready... (attempt $RETRY_COUNT/$MAX_RETRIES)"
-            sleep 1
-          done
-          
-          # Test SSH connection (basic connectivity)
-          echo "Testing SSH connectivity..."
-          timeout 10s nc -zv localhost 2224 || {
-            echo "Connection test failed. Container logs:"
-            docker logs ssh-test-${{ matrix.variant }}-${{ matrix.auth_method }} || true
+          # Basic health check
+          if ! docker ps | grep -q ssh-smoke-${{ matrix.variant }}; then
+            echo "❌ Container failed to start"
+            docker logs ssh-smoke-${{ matrix.variant }} || true
             exit 1
-          }
+          fi
+          
+          # Test SSH port is accessible
+          echo "Testing SSH connectivity..."
+          if timeout 5s nc -zv localhost 2224; then
+            echo "✅ SSH port is accessible"
+          else
+            echo "❌ SSH port not accessible"
+            docker logs ssh-smoke-${{ matrix.variant }}
+            exit 1
+          fi
+          
+          # Quick SSH connection test
+          if command -v sshpass &> /dev/null; then
+            sshpass -p testpass123 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+              -p 2224 testuser@localhost "echo '✅ SSH connection successful'" || true
+          fi
           
           # Cleanup
-          docker stop ssh-test-${{ matrix.variant }}-${{ matrix.auth_method }} || true
+          docker stop ssh-smoke-${{ matrix.variant }} || true
           
-          echo "✅ Test passed for ${{ matrix.variant }} (${{ matrix.platform }}) with ${{ matrix.auth_method }} auth"
+          echo "✅ Smoke test passed for ${{ matrix.variant }} variant"
