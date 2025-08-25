@@ -6,10 +6,7 @@ version: '3.8'
 services:
   # Debian-based SSH server (default, larger but more compatible)
   ssh-debian:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: ssh-test-server:debian
+    image: ghcr.io/billchurch/ssh_test:debian
     container_name: ssh-test-debian
     ports:
       - "2224:22"
@@ -27,10 +24,7 @@ services:
 
   # Alpine-based SSH server (ultra-minimal size)
   ssh-alpine:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.alpine
-    image: ssh-test-server:alpine
+    image: ghcr.io/billchurch/ssh_test:alpine
     container_name: ssh-test-alpine
     ports:
       - "2225:22"
@@ -47,9 +41,7 @@ services:
 
   # Basic password authentication setup (Debian)
   ssh-password-basic:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/billchurch/ssh_test:debian
     container_name: ssh-test-password
     ports:
       - "2226:22"
@@ -65,9 +57,7 @@ services:
 
   # Public key only authentication
   ssh-pubkey-only:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/billchurch/ssh_test:debian
     container_name: ssh-test-pubkey
     ports:
       - "2223:22"
@@ -85,9 +75,7 @@ services:
 
   # Custom port and debug mode
   ssh-custom-port:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/billchurch/ssh_test:debian
     container_name: ssh-test-custom-port
     ports:
       - "2224:2224"
@@ -103,9 +91,7 @@ services:
 
   # Security hardened configuration
   ssh-hardened:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/billchurch/ssh_test:debian
     container_name: ssh-test-hardened
     ports:
       - "2225:22"
@@ -128,9 +114,7 @@ services:
 
   # Multi-user setup (using multiple containers)
   ssh-user1:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/billchurch/ssh_test:debian
     container_name: ssh-test-user1
     ports:
       - "2226:22"
@@ -143,9 +127,7 @@ services:
       - multi
 
   ssh-user2:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/billchurch/ssh_test:debian
     container_name: ssh-test-user2
     ports:
       - "2227:22"
@@ -159,9 +141,7 @@ services:
 
   # Development/testing setup with volume mounts
   ssh-development:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/billchurch/ssh_test:debian
     container_name: ssh-test-dev
     ports:
       - "2228:22"
@@ -184,9 +164,7 @@ services:
 
   # Keyboard-interactive authentication
   ssh-keyboard-interactive:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/billchurch/ssh_test:debian
     container_name: ssh-test-keyboard
     ports:
       - "2229:22"
@@ -205,9 +183,7 @@ services:
 
   # Testing specific SSH client compatibility
   ssh-legacy:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/billchurch/ssh_test:debian
     container_name: ssh-test-legacy
     ports:
       - "2230:22"

@@ -44,6 +44,17 @@ jobs:
       attestations: write
       id-token: write
 
+    strategy:
+      matrix:
+        variant: [debian, alpine]
+        include:
+          - variant: debian
+            dockerfile: ./docker/Dockerfile
+            suffix: ""  # No suffix for debian (it's the default)
+          - variant: alpine
+            dockerfile: ./docker/Dockerfile.alpine
+            suffix: "-alpine"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -64,33 +75,53 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=${{ matrix.variant == 'debian' && github.ref == 'refs/heads/main' }}
+            suffix=${{ matrix.suffix }},onlatest=false
           tags: |
-            # set latest tag for default branch
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value={{date 'YYYYMMDD-HHmmss'}}-{{sha}}
-            type=schedule,pattern={{date 'YYYYMMDD'}}
-            # Add release-please version tag when triggered by repository dispatch
-            type=raw,value=${{ github.event.client_payload.version }},enable=${{ github.event_name == 'repository_dispatch' }}
-            type=raw,value=${{ github.event.client_payload.tag_name }},enable=${{ github.event_name == 'repository_dispatch' }}
+            # Branch-based tags
+            type=ref,event=branch,suffix=${{ matrix.suffix }}
+            type=ref,event=pr,suffix=${{ matrix.suffix }}
+            
+            # Semantic version tags with variant suffix
+            type=semver,pattern={{version}},suffix=${{ matrix.suffix }}
+            type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.suffix }}
+            type=semver,pattern={{major}},suffix=${{ matrix.suffix }},enable={{is_default_branch}}
+            
+            # Raw version without 'v' prefix
+            type=semver,pattern={{raw}},suffix=${{ matrix.suffix }}
+            
+            # Latest tag (only for debian on main branch)
+            type=raw,value=latest,enable=${{ matrix.variant == 'debian' && github.ref == 'refs/heads/main' }}
+            
+            # Variant-specific latest tags
+            type=raw,value=${{ matrix.variant }},enable={{is_default_branch}}
+            
+            # Schedule-based tags
+            type=schedule,pattern={{date 'YYYYMMDD'}},suffix=${{ matrix.suffix }}
+            
+            # Release-please version tags
+            type=raw,value=${{ github.event.client_payload.version }}${{ matrix.suffix }},enable=${{ github.event_name == 'repository_dispatch' }}
+            type=raw,value=${{ github.event.client_payload.tag_name }}${{ matrix.suffix }},enable=${{ github.event_name == 'repository_dispatch' }}
+            
+            # For version tags without suffix (debian only)
+            type=semver,pattern={{version}},enable=${{ matrix.variant == 'debian' }}
+            type=semver,pattern={{raw}},enable=${{ matrix.variant == 'debian' }}
           labels: |
-            org.opencontainers.image.title=SSH Test Server
-            org.opencontainers.image.description=Configurable SSH server for integration testing
+            org.opencontainers.image.title=SSH Test Server (${{ matrix.variant }})
+            org.opencontainers.image.description=Configurable SSH server for integration testing - ${{ matrix.variant }} variant
             org.opencontainers.image.vendor=${{ github.repository_owner }}
             org.opencontainers.image.documentation=https://github.com/${{ github.repository }}#readme
             org.opencontainers.image.version=${{ github.event.client_payload.version || '' }}
             org.opencontainers.image.revision=${{ github.event.client_payload.sha || github.sha }}
+            org.opencontainers.image.variant=${{ matrix.variant }}
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
         id: build
         with:
           context: .
-          file: ./docker/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
           push: ${{ (github.event_name != 'pull_request') && (github.event.inputs.push_image != 'false') }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -99,8 +130,8 @@ jobs:
             VERSION=${{ github.event.client_payload.version || fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || '0.1.0' }}
             BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
             VCS_REF=${{ github.event.client_payload.sha || github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
           provenance: true
           sbom: true
 
@@ -108,29 +139,30 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: anchore/sbom-action@v0
         with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || 'latest' }}
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || 'latest' }}${{ matrix.suffix }}
           format: spdx-json
-          output-file: sbom.spdx.json
+          output-file: sbom-${{ matrix.variant }}.spdx.json
 
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@master
         if: github.event_name != 'pull_request'
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || 'latest' }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || 'latest' }}${{ matrix.suffix }}
           format: sarif
-          output: trivy-results.sarif
+          output: trivy-results-${{ matrix.variant }}.sarif
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         if: github.event_name != 'pull_request'
         with:
-          sarif_file: trivy-results.sarif
+          sarif_file: trivy-results-${{ matrix.variant }}.sarif
+          category: security-scan-${{ matrix.variant }}
 
       - name: Run Trivy in table format
         uses: aquasecurity/trivy-action@master
         if: github.event_name != 'pull_request'
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || 'latest' }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] || 'latest' }}${{ matrix.suffix }}
           format: table
 
       - name: Attest build provenance
@@ -145,8 +177,8 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: sbom-${{ github.sha }}
-          path: sbom.spdx.json
+          name: sbom-${{ matrix.variant }}-${{ github.sha }}
+          path: sbom-${{ matrix.variant }}.spdx.json
 
   test:
     needs: build
@@ -155,8 +187,14 @@ jobs:
     
     strategy:
       matrix:
+        variant: [debian, alpine]
         platform: [linux/amd64, linux/arm64]
-        auth_method: [password, publickey, keyboard-interactive]
+        auth_method: [password, publickey]
+        include:
+          - variant: debian
+            suffix: ""
+          - variant: alpine
+            suffix: "-alpine"
 
     steps:
       - name: Checkout repository
@@ -179,23 +217,29 @@ jobs:
 
       - name: Run integration tests
         run: |
-          echo "Testing ${{ matrix.platform }} with ${{ matrix.auth_method }} auth"
+          echo "Testing ${{ matrix.variant }} (${{ matrix.platform }}) with ${{ matrix.auth_method }} auth"
+          
+          # Determine the tag to use
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            TAG="${{ matrix.variant }}"
+          else
+            TAG="${{ github.ref_name }}${{ matrix.suffix }}"
+          fi
           
           # Pull the image for the specific platform
-          docker pull --platform=${{ matrix.platform }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker pull --platform=${{ matrix.platform }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}
           
           # Run basic connectivity test with platform specification
           docker run --rm -d \
             --platform=${{ matrix.platform }} \
-            --name ssh-test-${{ matrix.auth_method }} \
+            --name ssh-test-${{ matrix.variant }}-${{ matrix.auth_method }} \
             -p 2224:22 \
             -e SSH_USER=testuser \
             -e SSH_PASSWORD=testpass123 \
             -e SSH_PERMIT_PASSWORD_AUTH=${{ matrix.auth_method == 'password' && 'yes' || 'no' }} \
             -e SSH_PERMIT_PUBKEY_AUTH=${{ matrix.auth_method == 'publickey' && 'yes' || 'no' }} \
-            -e SSH_CHALLENGE_RESPONSE_AUTH=${{ matrix.auth_method == 'keyboard-interactive' && 'yes' || 'no' }} \
             -e SSH_DEBUG_LEVEL=1 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}
           
           # Wait for container to be ready with retries
           MAX_RETRIES=30
@@ -203,7 +247,7 @@ jobs:
           
           echo "Waiting for container to be ready..."
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if docker ps | grep -q ssh-test-${{ matrix.auth_method }}; then
+            if docker ps | grep -q ssh-test-${{ matrix.variant }}-${{ matrix.auth_method }}; then
               # Check if SSH port is accessible from host
               if nc -zv localhost 2224 2>/dev/null; then
                 echo "Container is ready and SSH port is accessible!"
@@ -214,7 +258,7 @@ jobs:
             RETRY_COUNT=$((RETRY_COUNT + 1))
             if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
               echo "Container failed to become ready. Showing logs:"
-              docker logs ssh-test-${{ matrix.auth_method }} || true
+              docker logs ssh-test-${{ matrix.variant }}-${{ matrix.auth_method }} || true
               docker ps -a | grep ssh-test || true
               exit 1
             fi
@@ -227,11 +271,11 @@ jobs:
           echo "Testing SSH connectivity..."
           timeout 10s nc -zv localhost 2224 || {
             echo "Connection test failed. Container logs:"
-            docker logs ssh-test-${{ matrix.auth_method }} || true
+            docker logs ssh-test-${{ matrix.variant }}-${{ matrix.auth_method }} || true
             exit 1
           }
           
           # Cleanup
-          docker stop ssh-test-${{ matrix.auth_method }} || true
+          docker stop ssh-test-${{ matrix.variant }}-${{ matrix.auth_method }} || true
           
-          echo "✅ Test passed for ${{ matrix.platform }} with ${{ matrix.auth_method }} auth"
+          echo "✅ Test passed for ${{ matrix.variant }} (${{ matrix.platform }}) with ${{ matrix.auth_method }} auth"

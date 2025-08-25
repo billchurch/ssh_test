@@ -6,8 +6,8 @@
 A fully configurable SSH server Docker container designed specifically for integration testing, development, and SSH client validation. Built with security best practices and complete runtime configurability.
 
 **Available in two optimized variants:**
-- **Debian-based** (`ssh-test-server:debian`): 118MB - Maximum compatibility with full GNU toolchain
-- **Alpine-based** (`ssh-test-server:alpine`): 13.8MB - Ultra-minimal footprint for resource-constrained environments
+- **Debian-based** (`ghcr.io/billchurch/ssh_test:debian`): 118MB - Maximum compatibility with full GNU toolchain
+- **Alpine-based** (`ghcr.io/billchurch/ssh_test:alpine`): 13.8MB - Ultra-minimal footprint for resource-constrained environments
 
 ## Features
 
@@ -27,12 +27,12 @@ Choose the image variant that best fits your needs:
 
 ```bash
 # Alpine - Ultra-minimal (13.8MB)
-docker pull ssh-test-server:alpine
+docker pull ghcr.io/billchurch/ssh_test:alpine
 
 # Debian - Full compatibility (118MB, default)
-docker pull ssh-test-server:debian
+docker pull ghcr.io/billchurch/ssh_test:debian
 # or 
-docker pull ssh-test-server:latest  # same as debian
+docker pull ghcr.io/billchurch/ssh_test:latest  # same as debian
 ```
 
 ### Using Docker
@@ -43,14 +43,14 @@ docker run -d --name ssh-test-alpine \
   -p 2225:22 \
   -e SSH_USER=testuser \
   -e SSH_PASSWORD=testpass123 \
-  ssh-test-server:alpine
+  ghcr.io/billchurch/ssh_test:alpine
 
 # Basic password authentication (Debian - full compatibility)
 docker run -d --name ssh-test-debian \
   -p 2224:22 \
   -e SSH_USER=testuser \
   -e SSH_PASSWORD=testpass123 \
-  ssh-test-server:debian
+  ghcr.io/billchurch/ssh_test:debian
 
 # Test the connections
 ssh -p 2225 testuser@localhost  # Alpine
@@ -139,7 +139,7 @@ docker run -d --name ssh-password-test \
   -e SSH_PASSWORD=secure123 \
   -e SSH_PERMIT_PASSWORD_AUTH=yes \
   -e SSH_PERMIT_PUBKEY_AUTH=no \
-  ghcr.io/billchurch/ssh-test-server:latest
+  ghcr.io/billchurch/ssh_test:latest
 ```
 
 ### Public Key Authentication Only
@@ -155,7 +155,7 @@ docker run -d --name ssh-key-test \
   -e "SSH_AUTHORIZED_KEYS=$(cat test_key.pub)" \
   -e SSH_PERMIT_PASSWORD_AUTH=no \
   -e SSH_PERMIT_PUBKEY_AUTH=yes \
-  ghcr.io/billchurch/ssh-test-server:latest
+  ghcr.io/billchurch/ssh_test:latest
 
 # Connect with the key
 ssh -i test_key -p 2224 keyuser@localhost
@@ -177,7 +177,7 @@ docker run -d --name ssh-secure-test \
   -e SSH_X11_FORWARDING=no \
   -e SSH_AGENT_FORWARDING=no \
   -e SSH_TCP_FORWARDING=no \
-  ghcr.io/billchurch/ssh-test-server:latest
+  ghcr.io/billchurch/ssh_test:latest
 ```
 
 ### Debug Mode
@@ -188,7 +188,7 @@ docker run -d --name ssh-debug-test \
   -e SSH_USER=debuguser \
   -e SSH_PASSWORD=debugpass \
   -e SSH_DEBUG_LEVEL=3 \
-  ghcr.io/billchurch/ssh-test-server:latest
+  ghcr.io/billchurch/ssh_test:latest
 
 # View debug logs
 docker logs -f ssh-debug-test
@@ -312,14 +312,22 @@ The project uses GitHub Actions for:
 Images are automatically published to GitHub Container Registry:
 
 ```bash
-# Latest stable release
-docker pull ghcr.io/billchurch/ssh-test-server:latest
+# Latest stable release (Debian)
+docker pull ghcr.io/billchurch/ssh_test:latest
 
-# Specific version
-docker pull ghcr.io/billchurch/ssh-test-server:v1.0.0
+# Specific version (Debian)
+docker pull ghcr.io/billchurch/ssh_test:v1.0.2
+
+# Specific version with variant
+docker pull ghcr.io/billchurch/ssh_test:v1.0.2-alpine
+docker pull ghcr.io/billchurch/ssh_test:v1.0.2-debian
+
+# Latest variant tags
+docker pull ghcr.io/billchurch/ssh_test:alpine
+docker pull ghcr.io/billchurch/ssh_test:debian
 
 # Development builds
-docker pull ghcr.io/billchurch/ssh-test-server:main
+docker pull ghcr.io/billchurch/ssh_test:main
 ```
 
 ## Use Cases
@@ -350,7 +358,7 @@ docker run -d --name webssh-test \
   -e SSH_USER=webuser \
   -e SSH_PASSWORD=webpass123 \
   -e SSH_DEBUG_LEVEL=2 \
-  ghcr.io/billchurch/ssh-test-server:latest
+  ghcr.io/billchurch/ssh_test:latest
 
 # Configure your WebSSH client to connect to localhost:4444
 ```
@@ -366,7 +374,7 @@ docker run -d --name dev-ssh \
   -e SSH_USER=developer \
   -e SSH_PASSWORD=devpass \
   -v ./workspace:/home/developer/workspace \
-  ghcr.io/billchurch/ssh-test-server:latest
+  ghcr.io/billchurch/ssh_test:latest
 ```
 
 ## Troubleshooting
@@ -433,7 +441,7 @@ docker run -d --name ssh-debug \
   -e SSH_USER=testuser \
   -e SSH_PASSWORD=testpass \
   -e SSH_DEBUG_LEVEL=3 \
-  ghcr.io/billchurch/ssh-test-server:latest
+  ghcr.io/billchurch/ssh_test:latest
 
 # Watch debug logs in real-time
 docker logs -f ssh-debug
