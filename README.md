@@ -1,8 +1,7 @@
 # SSH Test Server
 
-[![Build and Push](https://github.com/billchurch/ssh-test-server/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/billchurch/ssh-test-server/actions/workflows/build-and-push.yml)
-[![Integration Tests](https://github.com/billchurch/ssh-test-server/actions/workflows/test.yml/badge.svg)](https://github.com/billchurch/ssh-test-server/actions/workflows/test.yml)
-[![Docker Pulls](https://img.shields.io/docker/pulls/billchurch/ssh-test-server)](https://hub.docker.com/r/billchurch/ssh-test-server)
+[![Build and Push](https://github.com/billchurch/ssh_test/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/billchurch/ssh_test/actions/workflows/build-and-push.yml)
+[![Integration Tests](https://github.com/billchurch/ssh_test/actions/workflows/test.yml/badge.svg)](https://github.com/billchurch/ssh_test/actions/workflows/test.yml)
 
 A fully configurable SSH server Docker container designed specifically for integration testing, development, and SSH client validation. Built with security best practices and complete runtime configurability.
 
