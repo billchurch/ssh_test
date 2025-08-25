@@ -5,6 +5,13 @@ All notable changes to the SSH Test Server project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1](https://github.com/billchurch/ssh_test/compare/v1.1.0...v1.1.1) (2025-08-25)
+
+
+### Bug Fixes
+
+* **ci:** remove duplicate suffix in Alpine variant tags ([4f97a42](https://github.com/billchurch/ssh_test/commit/4f97a423b7bef530eb790630af7af2017b45d4e1))
+
 ## [1.1.0](https://github.com/billchurch/ssh_test/compare/v1.0.2...v1.1.0) (2025-08-25)
 
 
