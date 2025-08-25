@@ -27,7 +27,6 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           
       - name: Setup SSH signing
-        if: secrets.SSH_SIGNING_KEY != ''
         run: |
           # Create SSH directory
           mkdir -p ~/.ssh
