@@ -204,21 +204,22 @@ jobs:
           echo "Waiting for container to be ready..."
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
             if docker ps | grep -q ssh-test-${{ matrix.auth_method }}; then
-              # Check if SSH is listening inside the container
-              if docker exec ssh-test-${{ matrix.auth_method }} sh -c "netstat -ln 2>/dev/null | grep -q :22" 2>/dev/null; then
-                echo "Container is ready!"
+              # Check if SSH port is accessible from host
+              if nc -zv localhost 2224 2>/dev/null; then
+                echo "Container is ready and SSH port is accessible!"
                 break
               fi
             fi
             
             RETRY_COUNT=$((RETRY_COUNT + 1))
             if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-              echo "Container failed to start properly. Showing logs:"
+              echo "Container failed to become ready. Showing logs:"
               docker logs ssh-test-${{ matrix.auth_method }} || true
               docker ps -a | grep ssh-test || true
               exit 1
             fi
             
+            echo "Waiting for SSH to be ready... (attempt $RETRY_COUNT/$MAX_RETRIES)"
             sleep 1
           done
           
