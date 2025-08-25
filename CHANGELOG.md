@@ -5,6 +5,13 @@ All notable changes to the SSH Test Server project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/billchurch/ssh_test/compare/v1.0.2...v1.1.0) (2025-08-25)
+
+
+### Features
+
+* add Alpine variant CI builds and update docs ([de1dee2](https://github.com/billchurch/ssh_test/commit/de1dee2a854ab2a17692b81728e49f0897905df9))
+
 ## [1.0.2](https://github.com/billchurch/ssh_test/compare/v1.0.1...v1.0.2) (2025-08-25)
 
 
