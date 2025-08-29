@@ -134,6 +134,38 @@ create_ssh_user() {
     log_info "User '${SSH_USER}' created successfully"
 }
 
+# Setup MOTD (Message of the Day)
+setup_motd() {
+    log_info "Setting up MOTD..."
+    
+    # Determine which MOTD file to use based on OS
+    if [ "$IS_ALPINE" = true ]; then
+        MOTD_FILE="/usr/local/share/motd.alpine"
+    else
+        MOTD_FILE="/usr/local/share/motd.debian"
+    fi
+    
+    # Process MOTD file with environment variable substitution if it exists
+    if [ -f "$MOTD_FILE" ]; then
+        # Use envsubst if available, otherwise use sed
+        if command -v envsubst >/dev/null 2>&1; then
+            envsubst < "$MOTD_FILE" > /etc/motd
+        else
+            # Fallback to sed for basic variable substitution
+            sed -e "s/\${SSH_PORT}/${SSH_PORT}/g" \
+                -e "s/\${SSH_USER}/${SSH_USER}/g" \
+                -e "s/\${SSH_DEBUG_LEVEL}/${SSH_DEBUG_LEVEL}/g" \
+                -e "s/\${SSH_PERMIT_PASSWORD_AUTH}/${SSH_PERMIT_PASSWORD_AUTH}/g" \
+                -e "s/\${SSH_PERMIT_PUBKEY_AUTH}/${SSH_PERMIT_PUBKEY_AUTH}/g" \
+                -e "s/\${SSH_CHALLENGE_RESPONSE_AUTH}/${SSH_CHALLENGE_RESPONSE_AUTH}/g" \
+                "$MOTD_FILE" > /etc/motd
+        fi
+        log_info "MOTD configured"
+    else
+        log_warn "MOTD file not found at $MOTD_FILE"
+    fi
+}
+
 # Generate or install host keys
 setup_host_keys() {
     log_info "Setting up SSH host keys..."
@@ -229,6 +261,9 @@ IgnoreRhosts yes
 HostbasedAuthentication no
 PermitUserEnvironment no
 
+# Display MOTD
+PrintMotd yes
+
 # Subsystem
 Subsystem sftp ${SFTP_SERVER_PATH}
 
@@ -273,6 +308,12 @@ print_startup_info() {
     fi
     
     log_info "=========================="
+    
+    # Display MOTD for direct exec sessions
+    if [ -f /etc/motd ]; then
+        echo ""
+        cat /etc/motd
+    fi
     echo ""
 }
 
@@ -288,6 +329,9 @@ main() {
     
     # Setup host keys
     setup_host_keys
+    
+    # Setup MOTD
+    setup_motd
     
     # Configure SSH daemon
     configure_sshd
