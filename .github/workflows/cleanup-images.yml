@@ -32,18 +32,15 @@ jobs:
     
     steps:
       - name: Cleanup old test and PR images
-        uses: actions/delete-package-versions@v5
+        uses: snok/container-retention-policy@v3.0.0
         with:
-          package-name: ssh_test
-          package-type: container
-          # Delete test images older than 3 days
-          min-versions-to-keep: 0
-          delete-only-pre-release-versions: false
+          account: ${{ github.repository_owner }}
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          # Only delete images with these tag patterns
-          delete-only-untagged-versions: false
-          tag-pattern: '^(test|.*-test|pr-.*|main-test|develop-test)$'
-          older-than-days: ${{ github.event.inputs.days_to_keep || '3' }}
+          image-names: ssh_test
+          image-tags: "test* *-test pr-* main-test develop-test"
+          tag-selection: tagged
+          cut-off: ${{ github.event.inputs.days_to_keep || '3' }}d
+          dry-run: ${{ github.event.inputs.dry_run || false }}
 
   cleanup-date-based-images:
     runs-on: ubuntu-latest
@@ -53,18 +50,17 @@ jobs:
     
     steps:
       - name: Cleanup old date-based images
-        uses: actions/delete-package-versions@v5
+        uses: snok/container-retention-policy@v3.0.0
         with:
-          package-name: ssh_test
-          package-type: container
-          # Keep only the last 5 date-based builds
-          min-versions-to-keep: 5
-          delete-only-pre-release-versions: false
+          account: ${{ github.repository_owner }}
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          delete-only-untagged-versions: false
-          # Match YYYYMMDD pattern
-          tag-pattern: '^[0-9]{8}.*$'
-          older-than-days: ${{ github.event.inputs.days_to_keep || '7' }}
+          image-names: ssh_test
+          # Match YYYYMMDD pattern - keep latest 5
+          image-tags: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*"
+          tag-selection: tagged
+          keep-n-most-recent: 5
+          cut-off: ${{ github.event.inputs.days_to_keep || '7' }}d
+          dry-run: ${{ github.event.inputs.dry_run || false }}
 
   cleanup-untagged:
     runs-on: ubuntu-latest
@@ -90,15 +86,15 @@ jobs:
     
     steps:
       - name: Delete PR-specific images
-        uses: actions/delete-package-versions@v5
+        uses: snok/container-retention-policy@v3.0.0
         with:
-          package-name: ssh_test
-          package-type: container
-          delete-only-pre-release-versions: false
+          account: ${{ github.repository_owner }}
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          delete-only-untagged-versions: false
-          # Delete images for this specific PR
-          tag-pattern: '^pr-${{ github.event.pull_request.number }}.*$'
+          image-names: ssh_test
+          image-tags: "pr-${{ github.event.pull_request.number }}*"
+          tag-selection: tagged
+          cut-off: 1h  # Delete immediately
+          dry-run: false  # Always delete on PR close
 
   report:
     needs: [cleanup-test-images, cleanup-date-based-images, cleanup-untagged]
