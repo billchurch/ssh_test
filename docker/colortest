@@ -1,0 +1,178 @@
+#!/bin/bash
+
+# Color Test Script for SSH Test Server
+# Tests terminal color capabilities including ANSI, 256-color, and true color
+
+echo "========================================="
+echo "     Terminal Color Capability Test      "
+echo "========================================="
+echo
+
+# Function to print color blocks
+print_color() {
+    local code=$1
+    local name=$2
+    printf "\033[${code}m%-12s\033[0m" "$name"
+}
+
+# Function to print a color block with background
+print_bg_color() {
+    local fg=$1
+    local bg=$2
+    printf "\033[${fg};${bg}m  \033[0m"
+}
+
+# Basic 16 ANSI Colors
+echo "1. Basic 16 ANSI Colors:"
+echo "   Foreground Colors:"
+echo -n "   Normal: "
+print_color "30" "Black"
+print_color "31" "Red"
+print_color "32" "Green"
+print_color "33" "Yellow"
+print_color "34" "Blue"
+print_color "35" "Magenta"
+print_color "36" "Cyan"
+print_color "37" "White"
+echo
+
+echo -n "   Bright: "
+print_color "90" "Black"
+print_color "91" "Red"
+print_color "92" "Green"
+print_color "93" "Yellow"
+print_color "94" "Blue"
+print_color "95" "Magenta"
+print_color "96" "Cyan"
+print_color "97" "White"
+echo
+echo
+
+# Background colors with contrast
+echo "   Background Colors:"
+echo -n "   Normal: "
+for i in {40..47}; do
+    print_bg_color "97" "$i"
+done
+echo
+
+echo -n "   Bright: "
+for i in {100..107}; do
+    print_bg_color "30" "$i"
+done
+echo
+echo
+
+# Text attributes
+echo "2. Text Attributes:"
+printf "   \033[1mBold Text\033[0m | "
+printf "\033[2mDim Text\033[0m | "
+printf "\033[3mItalic Text\033[0m | "
+printf "\033[4mUnderlined\033[0m | "
+printf "\033[5mBlinking\033[0m | "
+printf "\033[7mInverted\033[0m | "
+printf "\033[9mStrikethrough\033[0m"
+echo
+echo
+
+# 256 Color Palette
+echo "3. 256-Color Palette:"
+echo "   System colors (0-15):"
+for i in {0..15}; do
+    printf "\033[48;5;%dm  \033[0m" "$i"
+    if [ $((($i + 1) % 8)) -eq 0 ]; then echo; fi
+done
+echo
+
+echo "   Color cube (16-231):"
+for green in {0..5}; do
+    for red in {0..5}; do
+        for blue in {0..5}; do
+            color=$((16 + red * 36 + green * 6 + blue))
+            printf "\033[48;5;%dm  \033[0m" "$color"
+        done
+        printf " "
+    done
+    echo
+done
+echo
+
+echo "   Grayscale (232-255):"
+for i in {232..255}; do
+    printf "\033[48;5;%dm  \033[0m" "$i"
+done
+echo
+echo
+
+# True Color (24-bit) Test
+echo "4. True Color (24-bit RGB) Test:"
+echo "   Red gradient:"
+for i in {0..255..5}; do
+    printf "\033[48;2;%d;0;0m \033[0m" "$i"
+done
+echo
+
+echo "   Green gradient:"
+for i in {0..255..5}; do
+    printf "\033[48;2;0;%d;0m \033[0m" "$i"
+done
+echo
+
+echo "   Blue gradient:"
+for i in {0..255..5}; do
+    printf "\033[48;2;0;0;%dm \033[0m" "$i"
+done
+echo
+
+echo "   Rainbow gradient:"
+for i in {0..127}; do
+    # Calculate RGB values for rainbow effect
+    if [ $i -lt 21 ]; then
+        r=255; g=$((i*12)); b=0
+    elif [ $i -lt 42 ]; then
+        r=$((255-(i-21)*12)); g=255; b=0
+    elif [ $i -lt 64 ]; then
+        r=0; g=255; b=$(((i-42)*12))
+    elif [ $i -lt 85 ]; then
+        r=0; g=$((255-(i-64)*12)); b=255
+    elif [ $i -lt 106 ]; then
+        r=$(((i-85)*12)); g=0; b=255
+    else
+        r=255; g=0; b=$((255-(i-106)*12))
+    fi
+    printf "\033[48;2;%d;%d;%dm \033[0m" "$r" "$g" "$b"
+done
+echo
+echo
+
+# Terminal Capabilities
+echo "5. Terminal Information:"
+echo "   TERM variable: $TERM"
+echo "   Color capability: $(tput colors 2>/dev/null || echo 'unknown') colors"
+
+# Check for specific capabilities
+echo -n "   Capabilities: "
+capabilities=""
+if [ -n "$COLORTERM" ]; then
+    capabilities="${capabilities}truecolor "
+fi
+if tput setaf 1 &>/dev/null; then
+    capabilities="${capabilities}ansi "
+fi
+if tput bold &>/dev/null; then
+    capabilities="${capabilities}bold "
+fi
+if tput sitm &>/dev/null; then
+    capabilities="${capabilities}italics "
+fi
+echo "${capabilities:-none detected}"
+echo
+
+echo "========================================="
+echo "Color test complete!"
+echo
+echo "Tips:"
+echo "- If colors appear incorrect, check your terminal emulator settings"
+echo "- For best results, use a terminal that supports 24-bit true color"
+echo "- Try running 'mc' for Midnight Commander file manager"
+echo "========================================="

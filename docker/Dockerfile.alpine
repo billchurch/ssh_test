@@ -16,17 +16,20 @@ LABEL org.opencontainers.image.revision="${VCS_REF}"
 LABEL org.opencontainers.image.title="SSH Test Server (Alpine)"
 LABEL org.opencontainers.image.description="Configurable SSH server for integration testing - Alpine variant"
 
-# Install OpenSSH server and bash with minimal footprint
+# Install OpenSSH server, bash, and utilities with minimal footprint
 # hadolint ignore=DL3018
 RUN apk add --no-cache \
         openssh-server \
         openssh-sftp-server \
         bash \
+        mc \
     && rm -rf /var/cache/apk/* \
     && mkdir -p /var/run/sshd /etc/ssh/ssh_host_keys
 
-# Copy entrypoint script with correct permissions
+# Copy scripts and configuration files with correct permissions
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chmod=755 docker/colortest /usr/local/bin/colortest
+COPY docker/motd.alpine /usr/local/share/motd.alpine
 
 # Default environment variables
 # Note: These are test server configuration variables, not secrets

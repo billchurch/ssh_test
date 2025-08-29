@@ -1,0 +1,35 @@
+╔════════════════════════════════════════════════════════════════╗
+║              SSH Test Server - Alpine Edition                  ║
+║                    🔐 Ready for Testing 🔐                     ║
+╚════════════════════════════════════════════════════════════════╝
+
+Welcome to the SSH Test Server (Alpine Linux)
+Container configured for comprehensive SSH testing
+
+📋 Available Tools:
+  • mc         - Midnight Commander file manager
+  • colortest  - Terminal color capability tester
+  • ssh/sshd   - OpenSSH client and server utilities
+
+🎨 Test Your Terminal:
+  $ colortest    # Run comprehensive color tests
+  $ mc           # Launch Midnight Commander
+
+ℹ️  System Information:
+  • Base: Alpine Linux 3.19
+  • SSH Port: ${SSH_PORT}
+  • User: ${SSH_USER}
+  • Debug Level: ${SSH_DEBUG_LEVEL}
+
+🔧 Configuration:
+  • Password Auth: ${SSH_PERMIT_PASSWORD_AUTH}
+  • Public Key Auth: ${SSH_PERMIT_PUBKEY_AUTH}
+  • Challenge-Response: ${SSH_CHALLENGE_RESPONSE_AUTH}
+
+💡 Quick Tips:
+  • Run 'colortest' to validate terminal colors
+  • Use 'mc' for visual file management
+  • Check '/etc/ssh/sshd_config' for SSH settings
+  • Logs available via 'docker logs' command
+
+═══════════════════════════════════════════════════════════════

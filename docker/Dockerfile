@@ -18,12 +18,14 @@ LABEL org.opencontainers.image.description="Configurable SSH server for integrat
 # Avoid interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install OpenSSH server and utilities with aggressive size optimization
+# Install OpenSSH server, utilities, and tools with aggressive size optimization
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         openssh-server \
         bash \
+        mc \
+        ncurses-bin \
         && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
               /usr/share/doc/* \
@@ -33,8 +35,10 @@ RUN apt-get update && \
               /var/tmp/* \
     && mkdir -p /var/run/sshd /etc/ssh/ssh_host_keys
 
-# Copy entrypoint script with correct permissions
+# Copy scripts and configuration files with correct permissions
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chmod=755 docker/colortest /usr/local/bin/colortest
+COPY docker/motd.debian /usr/local/share/motd.debian
 
 # Default environment variables
 # Note: These are test server configuration variables, not secrets
