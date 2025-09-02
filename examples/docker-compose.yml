@@ -63,6 +63,7 @@ services:
       - "2223:22"
     environment:
       - SSH_USER=keyuser
+      - SSH_PASSWORD=keypass123
       - SSH_AUTHORIZED_KEYS=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDJ... user@example.com
       - SSH_PERMIT_PASSWORD_AUTH=no
       - SSH_PERMIT_PUBKEY_AUTH=yes

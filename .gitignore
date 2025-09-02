@@ -141,3 +141,7 @@ known_hosts
 
 CLAUDE.md
 .claude/
+
+test-keys/
+
+AGENTS.md

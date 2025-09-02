@@ -41,6 +41,7 @@ OPTIONS:
     -c, --container NAME      Docker container name to test against
     -t, --timeout SECONDS     Connection timeout (default: 10)
     -g, --generate-keys       Generate temporary SSH keys for testing
+    -k, --keys-dir DIR        Directory to save generated keys (default: temp dir)
     -C, --cleanup-keys        Cleanup temporary keys after testing
     -v, --verbose             Enable verbose output
     --help                    Show this help message
@@ -51,6 +52,9 @@ EXAMPLES:
 
     # Test with key generation
     $0 --host localhost --port 2224 --user testuser --generate-keys
+    
+    # Generate keys in specific directory
+    $0 --container ssh-test-server --user testuser --generate-keys --keys-dir ./test-keys
 
     # Test with verbose output
     $0 --container ssh-test-server --user testuser --verbose
@@ -119,6 +123,10 @@ parse_args() {
                 GENERATE_KEYS="true"
                 shift
                 ;;
+            -k|--keys-dir)
+                KEYS_DIR="$2"
+                shift 2
+                ;;
             -C|--cleanup-keys)
                 CLEANUP_KEYS="true"
                 shift
@@ -176,7 +184,16 @@ generate_test_keys() {
         return 0
     fi
     
-    log_info "Generating test SSH keys..."
+    # Use specified keys directory or temp directory
+    local keys_output_dir="${KEYS_DIR:-$TEMP_DIR}"
+    
+    # Create keys directory if it doesn't exist
+    if [[ -n "${KEYS_DIR}" ]]; then
+        mkdir -p "${keys_output_dir}"
+        log_info "Generating test SSH keys in: ${keys_output_dir}"
+    else
+        log_info "Generating test SSH keys in temporary directory..."
+    fi
     
     # Generate different types of keys
     local key_types=(
@@ -192,7 +209,7 @@ generate_test_keys() {
         key_size="${key_size%%:*}"
         local key_desc="${key_type_info##*:}"
         
-        local key_file="${TEMP_DIR}/test_${key_type}${key_size:+_${key_size}}_key"
+        local key_file="${keys_output_dir}/test_${key_type}${key_size:+_${key_size}}_key"
         
         log_debug "Generating ${key_desc} key: ${key_file}"
         
@@ -210,6 +227,23 @@ generate_test_keys() {
     done
     
     log_info "Test key generation completed"
+    
+    # Show generated keys summary if using persistent directory
+    if [[ -n "${KEYS_DIR}" ]]; then
+        log_info ""
+        log_info "Generated SSH keys for testing:"
+        for key_type_info in "${key_types[@]}"; do
+            local key_type="${key_type_info%%:*}"
+            local key_size="${key_type_info#*:}"
+            key_size="${key_size%%:*}"
+            local key_file="${keys_output_dir}/test_${key_type}${key_size:+_${key_size}}_key"
+            if [[ -f "${key_file}" ]]; then
+                log_info "  Private: ${key_file}"
+                log_info "  Public:  ${key_file}.pub"
+            fi
+        done
+        log_info ""
+    fi
 }
 
 # Get container environment variable
@@ -252,7 +286,7 @@ test_password_authentication() {
         
         log_debug "Testing: ${test_desc}"
         
-        if [[ ! command -v sshpass >/dev/null 2>&1 ]]; then
+        if ! command -v sshpass >/dev/null 2>&1; then
             log_warn "  ⏭️  Skipping ${test_name} (sshpass not available)"
             continue
         fi
@@ -322,7 +356,7 @@ test_pubkey_authentication() {
             continue  # Skip public key files
         fi
         key_files+=("${key_file}")
-    done < <(find "${TEMP_DIR}" -name "*_key" -type f -print0 2>/dev/null || true)
+    done < <(find "${KEYS_DIR:-$TEMP_DIR}" -name "*_key" -type f -print0 2>/dev/null || true)
     
     if [[ ${#key_files[@]} -eq 0 ]]; then
         log_warn "No private key files found for testing"
@@ -408,7 +442,7 @@ test_auth_method_restrictions() {
     if [[ "${permit_pubkey}" == "no" ]] && [[ "${GENERATE_KEYS}" == "true" ]]; then
         log_debug "Testing pubkey auth when disabled..."
         
-        local test_key_file="${TEMP_DIR}/test_rsa_key"
+        local test_key_file="${KEYS_DIR:-$TEMP_DIR}/test_rsa2048_key"
         if [[ -f "${test_key_file}" ]]; then
             if ssh \
                 -o ConnectTimeout="${TIMEOUT}" \

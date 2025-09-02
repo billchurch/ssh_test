@@ -222,8 +222,9 @@ ListenAddress ::
 # Host keys
 $(find /etc/ssh -name 'ssh_host_*_key' -type f | sed 's/^/HostKey /')
 
-# Logging
-SyslogFacility AUTHPRIV
+# Logging - Use stderr for Docker log compatibility
+# Note: With -e flag, sshd logs to stderr regardless of syslog facility
+SyslogFacility AUTH
 LogLevel $(case ${SSH_DEBUG_LEVEL} in 0) echo "INFO";; 1) echo "VERBOSE";; 2) echo "DEBUG";; 3) echo "DEBUG3";; esac)
 
 # Authentication
@@ -340,8 +341,8 @@ main() {
     print_startup_info
     
     # Prepare SSH daemon arguments  
-    # Always run in daemon mode (background) but log to stderr with -e
-    SSHD_ARGS=("-e")
+    # Run SSH daemon in foreground mode to capture logs properly
+    SSHD_ARGS=("-D" "-e")
     
     # Note: We intentionally do NOT add debug flags (-d, -dd, -ddd) here because
     # they force sshd into single-connection mode ("will not fork when running in debugging mode").
@@ -359,36 +360,17 @@ main() {
     
     log_info "Starting SSH daemon with args: ${SSHD_ARGS[*]}"
     
-    # Start SSH daemon in background
-    /usr/sbin/sshd "${SSHD_ARGS[@]}"
-    SSH_START_EXIT_CODE=$?
-    
-    # Verify it started
-    sleep 2
-    if [[ $SSH_START_EXIT_CODE -ne 0 ]]; then
-        log_error "SSH daemon failed to start (exit code: $SSH_START_EXIT_CODE)"
-        # Try to get more error details
-        /usr/sbin/sshd -t "${SSHD_ARGS[@]}" 2>&1 || true
+    # Validate configuration before starting
+    if ! /usr/sbin/sshd -t -f /etc/ssh/sshd_config; then
+        log_error "SSH configuration validation failed before starting daemon"
         exit 1
     fi
     
-    # Check if sshd process is running (use a more flexible pattern)
-    if ! pgrep -f "/usr/sbin/sshd.*-f" >/dev/null; then
-        log_error "SSH daemon process not found after startup"
-        exit 1
-    fi
+    log_info "SSH daemon starting in foreground mode..."
     
-    log_info "SSH daemon started successfully, keeping container alive..."
-    
-    # Keep container running and monitor SSH daemon
-    while true; do
-        if ! pgrep -f "/usr/sbin/sshd.*-f" >/dev/null; then
-            log_warn "SSH daemon stopped, restarting..."
-            /usr/sbin/sshd "${SSHD_ARGS[@]}"
-            sleep 3
-        fi
-        sleep 30
-    done
+    # Start SSH daemon in foreground mode - this will keep the container alive
+    # and allow us to see all SSH logs in docker logs
+    exec /usr/sbin/sshd "${SSHD_ARGS[@]}"
 }
 
 # Handle signals gracefully
