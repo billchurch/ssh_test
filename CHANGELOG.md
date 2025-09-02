@@ -5,6 +5,14 @@ All notable changes to the SSH Test Server project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2](https://github.com/billchurch/ssh_test/compare/v1.1.1...v1.1.2) (2025-09-02)
+
+
+### Bug Fixes
+
+* **ci:** update cleanup workflow to use compatible actions ([6bfdcf1](https://github.com/billchurch/ssh_test/commit/6bfdcf17d47f051c3edff5de86b1cf80534cbab0))
+* enable SSH daemon logs in Docker output ([88ca85c](https://github.com/billchurch/ssh_test/commit/88ca85c30cfb1a734dec35d644b76ac92e375dbe))
+
 ## [1.1.1](https://github.com/billchurch/ssh_test/compare/v1.1.0...v1.1.1) (2025-08-25)
 
 
