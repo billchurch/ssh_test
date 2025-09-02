@@ -23,6 +23,7 @@ RUN apk add --no-cache \
         openssh-sftp-server \
         bash \
         mc \
+        shadow \
     && rm -rf /var/cache/apk/* \
     && mkdir -p /var/run/sshd /etc/ssh/ssh_host_keys
 
