@@ -16,14 +16,16 @@ LABEL org.opencontainers.image.revision="${VCS_REF}"
 LABEL org.opencontainers.image.title="SSH Test Server (Alpine)"
 LABEL org.opencontainers.image.description="Configurable SSH server for integration testing - Alpine variant"
 
-# Install OpenSSH server, bash, and utilities with minimal footprint
+# Install OpenSSH server, client, bash, and utilities with minimal footprint
 # hadolint ignore=DL3018
 RUN apk add --no-cache \
         openssh-server \
         openssh-sftp-server \
+        openssh-client \
         bash \
         mc \
         shadow \
+        socat \
     && rm -rf /var/cache/apk/* \
     && mkdir -p /var/run/sshd /etc/ssh/ssh_host_keys
 
@@ -54,6 +56,9 @@ ENV SSH_USER=testuser \
     SSH_X11_FORWARDING=no \
     SSH_AGENT_FORWARDING=no \
     SSH_TCP_FORWARDING=no \
+    SSH_AGENT_START=no \
+    SSH_AGENT_KEYS="" \
+    SSH_AGENT_SOCKET_PATH="/tmp/ssh-agent.sock" \
     SSH_CUSTOM_CONFIG=""
 
 # Expose SSH port (default 22, configurable via SSH_PORT)

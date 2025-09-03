@@ -128,6 +128,19 @@ test-auth-debian: ## Test authentication methods on Debian container
 test-auth-alpine: ## Test authentication methods on Alpine container
 	./scripts/test-auth-methods.sh --container $(CONTAINER_NAME)-alpine --user $(SSH_USER) --generate-keys
 
+test-agent: test-agent-debian ## Run SSH agent tests on default (Debian) image
+
+test-agent-all: test-agent-debian test-agent-alpine ## Run SSH agent tests on both images
+
+test-agent-debian: ## Run SSH agent tests on Debian image
+	./tests/integration/test-ssh-agent.sh --image $(IMAGE_NAME):debian
+
+test-agent-alpine: ## Run SSH agent tests on Alpine image
+	./tests/integration/test-ssh-agent.sh --image $(IMAGE_NAME):alpine
+
+test-agent-verbose: ## Run SSH agent tests with verbose output
+	./tests/integration/test-ssh-agent.sh --image $(IMAGE_NAME):$(IMAGE_TAG) --verbose
+
 integration-test: build-all test-all ## Build both images and run integration tests
 
 # Development targets
@@ -182,6 +195,15 @@ compose-down: ## Stop Docker Compose services
 
 compose-logs: ## Show Docker Compose logs
 	docker-compose logs -f
+
+compose-agent: ## Start SSH agent services using Docker Compose
+	docker-compose --profile ssh-agent up -d
+
+compose-agent-basic: ## Start basic SSH agent service
+	docker-compose --profile agent up -d
+
+compose-agent-keys: ## Start SSH agent service with preloaded keys
+	docker-compose --profile agent-keys up -d
 
 # CI/CD simulation
 ci-build: ## Simulate CI build process

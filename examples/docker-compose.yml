@@ -204,6 +204,86 @@ services:
     profiles:
       - legacy
 
+  # SSH Agent - Basic internal agent
+  ssh-agent-basic:
+    image: ghcr.io/billchurch/ssh_test:debian
+    container_name: ssh-test-agent-basic
+    ports:
+      - "2231:22"
+    environment:
+      - SSH_USER=agentuser
+      - SSH_PASSWORD=agent123
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_PERMIT_PUBKEY_AUTH=yes
+      - SSH_AGENT_START=yes
+      - SSH_AGENT_FORWARDING=yes
+      - SSH_DEBUG_LEVEL=1
+    restart: unless-stopped
+    profiles:
+      - agent
+      - ssh-agent
+
+  # SSH Agent - With preloaded keys
+  ssh-agent-with-keys:
+    image: ghcr.io/billchurch/ssh_test:debian
+    container_name: ssh-test-agent-keys
+    ports:
+      - "2232:22"
+    environment:
+      - SSH_USER=keyagent
+      - SSH_PASSWORD=keyagent123
+      - SSH_PERMIT_PASSWORD_AUTH=no
+      - SSH_PERMIT_PUBKEY_AUTH=yes
+      - SSH_AGENT_START=yes
+      - SSH_AGENT_FORWARDING=yes
+      # Note: In production, load SSH_AGENT_KEYS from a secure source
+      # This is a base64-encoded example test key for demonstration
+      - SSH_AGENT_KEYS=${SSH_AGENT_TEST_KEY:-}
+      - SSH_AGENT_SOCKET_PATH=/tmp/custom-agent.sock
+      - SSH_DEBUG_LEVEL=2
+    restart: unless-stopped
+    profiles:
+      - agent-keys
+      - ssh-agent
+
+  # SSH Agent - Alpine variant
+  ssh-agent-alpine:
+    image: ghcr.io/billchurch/ssh_test:alpine
+    container_name: ssh-test-agent-alpine
+    ports:
+      - "2233:22"
+    environment:
+      - SSH_USER=alpineagent
+      - SSH_PASSWORD=alpine123
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_PERMIT_PUBKEY_AUTH=yes
+      - SSH_AGENT_START=yes
+      - SSH_AGENT_FORWARDING=yes
+      - SSH_DEBUG_LEVEL=1
+    restart: unless-stopped
+    profiles:
+      - agent-alpine
+      - ssh-agent
+
+  # SSH Agent - Forwarding only (no internal agent)
+  ssh-agent-forwarding-only:
+    image: ghcr.io/billchurch/ssh_test:debian
+    container_name: ssh-test-forwarding-only
+    ports:
+      - "2234:22"
+    environment:
+      - SSH_USER=forwarduser
+      - SSH_PASSWORD=forward123
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_PERMIT_PUBKEY_AUTH=yes
+      - SSH_AGENT_START=no
+      - SSH_AGENT_FORWARDING=yes
+      - SSH_DEBUG_LEVEL=1
+    restart: unless-stopped
+    profiles:
+      - agent-forwarding
+      - ssh-agent
+
 volumes:
   dev-workspace:
     driver: local

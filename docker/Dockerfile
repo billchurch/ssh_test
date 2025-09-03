@@ -18,14 +18,16 @@ LABEL org.opencontainers.image.description="Configurable SSH server for integrat
 # Avoid interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install OpenSSH server, utilities, and tools with aggressive size optimization
+# Install OpenSSH server, client, utilities, and tools with aggressive size optimization
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         openssh-server \
+        openssh-client \
         bash \
         mc \
         ncurses-bin \
+        socat \
         && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
               /usr/share/doc/* \
@@ -62,6 +64,9 @@ ENV SSH_USER=testuser \
     SSH_X11_FORWARDING=no \
     SSH_AGENT_FORWARDING=no \
     SSH_TCP_FORWARDING=no \
+    SSH_AGENT_START=no \
+    SSH_AGENT_KEYS="" \
+    SSH_AGENT_SOCKET_PATH="/tmp/ssh-agent.sock" \
     SSH_CUSTOM_CONFIG=""
 
 # Expose SSH port (default 22, configurable via SSH_PORT)

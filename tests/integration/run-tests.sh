@@ -167,8 +167,27 @@ cleanup_container() {
     
     if [[ "${CLEANUP}" == "true" ]]; then
         log_debug "Cleaning up container: ${container_name}"
-        docker stop "${container_name}" >/dev/null 2>&1 || true
-        docker rm "${container_name}" >/dev/null 2>&1 || true
+        # Skip docker stop completely and go straight to forceful removal
+        # since --rm flag with docker stop can hang
+        docker rm -f "${container_name}" >/dev/null 2>&1 || true
+    fi
+}
+
+# Pre-test cleanup to remove any stale containers
+cleanup_stale_containers() {
+    log_info "Cleaning up any stale SSH test containers..."
+    
+    # Find and remove containers with ssh-test prefix
+    local stale_containers
+    stale_containers=$(docker ps -aq --filter="name=ssh-test-" 2>/dev/null || true)
+    
+    if [[ -n "${stale_containers}" ]]; then
+        log_debug "Found stale containers: ${stale_containers}"
+        # Remove all stale containers forcefully
+        echo "${stale_containers}" | xargs docker rm -f >/dev/null 2>&1 || true
+        log_info "Cleaned up stale containers"
+    else
+        log_debug "No stale containers found"
     fi
 }
 
@@ -194,6 +213,35 @@ wait_for_container() {
     return 1
 }
 
+# Helper function for SSH connections with retry logic
+ssh_test_connection() {
+    local password="$1"
+    local port="$2"
+    local user="$3"
+    local command="$4"
+    shift 4
+    local ssh_args=("$@")
+    
+    local retry_count=0
+    local max_retries=3
+    
+    while [[ $retry_count -lt $max_retries ]]; do
+        if sshpass -p "${password}" ssh \
+            -o ConnectTimeout=5 \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "${ssh_args[@]}" \
+            -p "${port}" "${user}@localhost" \
+            "${command}" >/dev/null 2>&1; then
+            return 0
+        fi
+        ((retry_count++))
+        [[ $retry_count -lt $max_retries ]] && sleep 1
+    done
+    
+    return 1
+}
+
 # Test basic functionality
 test_basic_functionality() {
     local test_name="Basic Functionality"
@@ -204,7 +252,7 @@ test_basic_functionality() {
     local port=2224
     
     # Start container
-    if ! docker run -d --name "${container_name}" \
+    if ! docker run -d --rm --name "${container_name}" \
         -e SSH_USER=testuser \
         -e SSH_PASSWORD=testpass123 \
         -e SSH_DEBUG_LEVEL=1 \
@@ -222,12 +270,7 @@ test_basic_functionality() {
     fi
     
     # Test SSH connection
-    if sshpass -p "testpass123" ssh \
-        -o ConnectTimeout=5 \
-        -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        -p "${port}" testuser@localhost \
-        "echo 'Basic test successful'" >/dev/null 2>&1; then
+    if ssh_test_connection "testpass123" "${port}" "testuser" "echo 'Basic test successful'"; then
         log_test_pass "${test_name}"
         cleanup_container "${container_name}"
         return 0
@@ -248,7 +291,7 @@ test_password_authentication() {
     local port=2223
     
     # Start container with password auth only
-    if ! docker run -d --name "${container_name}" \
+    if ! docker run -d --rm --name "${container_name}" \
         -e SSH_USER=passuser \
         -e SSH_PASSWORD=securepass456 \
         -e SSH_PERMIT_PASSWORD_AUTH=yes \
@@ -307,7 +350,7 @@ test_pubkey_authentication() {
     ((TESTS_RUN++))
     
     local container_name="ssh-test-pubkey-$$"
-    local port=2224
+    local port=2229
     
     # Generate test key
     local temp_key_dir
@@ -324,7 +367,7 @@ test_pubkey_authentication() {
     public_key=$(cat "${test_key}.pub")
     
     # Start container with public key auth only
-    if ! docker run -d --name "${container_name}" \
+    if ! docker run -d --rm --name "${container_name}" \
         -e SSH_USER=keyuser \
         -e "SSH_AUTHORIZED_KEYS=${public_key}" \
         -e SSH_PERMIT_PASSWORD_AUTH=no \
@@ -377,7 +420,7 @@ test_custom_port() {
     local ssh_port=2224
     
     # Start container with custom SSH port
-    if ! docker run -d --name "${container_name}" \
+    if ! docker run -d --rm --name "${container_name}" \
         -e SSH_USER=portuser \
         -e SSH_PASSWORD=portpass789 \
         -e SSH_PORT="${ssh_port}" \
@@ -421,7 +464,7 @@ test_security_hardening() {
     local port=2226
     
     # Start container with security hardening
-    if ! docker run -d --name "${container_name}" \
+    if ! docker run -d --rm --name "${container_name}" \
         -e SSH_USER=secureuser \
         -e SSH_PASSWORD=securepass \
         -e SSH_PERMIT_ROOT_LOGIN=no \
@@ -456,11 +499,14 @@ test_security_hardening() {
         return 1
     fi
     
-    # Test that regular user can still login
+    # Test that regular user can still login (force password auth to avoid MaxAuthTries exhaustion)
     if ! sshpass -p "securepass" ssh \
         -o ConnectTimeout=5 \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
+        -o PasswordAuthentication=yes \
+        -o PubkeyAuthentication=no \
+        -o NumberOfPasswordPrompts=1 \
         -p "${port}" secureuser@localhost \
         "echo 'Regular user login successful'" >/dev/null 2>&1; then
         cleanup_container "${container_name}"
@@ -483,7 +529,7 @@ test_debug_mode() {
     local port=2227
     
     # Start container with debug mode
-    if ! docker run -d --name "${container_name}" \
+    if ! docker run -d --rm --name "${container_name}" \
         -e SSH_USER=debuguser \
         -e SSH_PASSWORD=debugpass \
         -e SSH_DEBUG_LEVEL=3 \
@@ -531,7 +577,7 @@ test_env_validation() {
     local container_name="ssh-test-env-$$"
     
     # Start container with invalid port (should use default)
-    if ! docker run -d --name "${container_name}" \
+    if ! docker run -d --rm --name "${container_name}" \
         -e SSH_USER=envuser \
         -e SSH_PASSWORD=envpass \
         -e SSH_PORT=99999 \
@@ -566,14 +612,60 @@ test_env_validation() {
     fi
 }
 
+# Test SSH agent functionality
+test_ssh_agent() {
+    local test_name="SSH Agent Integration"
+    log_test_start "${test_name}"
+    ((TESTS_RUN++))
+    
+    # Get the directory of this script
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Path to agent test script
+    local agent_test_script="${script_dir}/test-ssh-agent.sh"
+    
+    if [[ ! -f "${agent_test_script}" ]]; then
+        log_test_fail "${test_name} - Agent test script not found at ${agent_test_script}"
+        return
+    fi
+    
+    if [[ ! -x "${agent_test_script}" ]]; then
+        log_test_fail "${test_name} - Agent test script not executable"
+        return
+    fi
+    
+    # Run the agent test script
+    local verbose_flag=""
+    if [[ "${VERBOSE}" == "true" ]]; then
+        verbose_flag="--verbose"
+    fi
+    
+    local cleanup_flag=""
+    if [[ "${CLEANUP}" == "false" ]]; then
+        cleanup_flag="--no-cleanup"
+    fi
+    
+    log_debug "Running SSH agent tests with image: ${DOCKER_IMAGE}"
+    
+    if "${agent_test_script}" --image "${DOCKER_IMAGE}" --timeout "${TEST_TIMEOUT}" ${verbose_flag} ${cleanup_flag}; then
+        log_test_pass "${test_name}"
+    else
+        log_test_fail "${test_name} - SSH agent tests failed"
+    fi
+}
+
 # Run a single test
+# Note: With 'set -e' enabled globally, a non-zero return from a test function
+# would terminate the whole script. We explicitly swallow the exit status here
+# so the harness can aggregate results and continue running subsequent tests.
 run_single_test() {
     local test_func="$1"
-    
+
     if [[ "${PARALLEL}" == "true" ]]; then
-        $test_func &
+        { $test_func || true; } &
     else
-        $test_func
+        $test_func || true
     fi
 }
 
@@ -628,6 +720,9 @@ main() {
     # Check dependencies
     check_dependencies
     
+    # Clean up any stale containers
+    cleanup_stale_containers
+    
     log_info "Test Configuration:"
     log_info "  Docker Image: ${DOCKER_IMAGE}"
     log_info "  Test Timeout: ${TEST_TIMEOUT} seconds"
@@ -649,6 +744,7 @@ main() {
         test_security_hardening
         test_debug_mode
         test_env_validation
+        test_ssh_agent
     )
     
     # Run tests

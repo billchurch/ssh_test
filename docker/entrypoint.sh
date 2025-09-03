@@ -288,6 +288,157 @@ EOF
     fi
 }
 
+# Start SSH agent
+start_ssh_agent() {
+    if [[ "${SSH_AGENT_START}" != "yes" ]]; then
+        log_debug "SSH agent startup disabled"
+        return 0
+    fi
+    
+    log_info "Starting SSH agent..."
+    
+    # Ensure the socket directory exists
+    local socket_dir
+    socket_dir=$(dirname "${SSH_AGENT_SOCKET_PATH}")
+    mkdir -p "${socket_dir}"
+    
+    # Remove any existing socket
+    rm -f "${SSH_AGENT_SOCKET_PATH}"
+    
+    # Start SSH agent with custom socket path
+    if ssh-agent -a "${SSH_AGENT_SOCKET_PATH}" > /tmp/ssh-agent-output 2>&1; then
+        log_debug "SSH agent started successfully"
+        
+        # Set SSH_AUTH_SOCK for this process and subprocesses
+        export SSH_AUTH_SOCK="${SSH_AGENT_SOCKET_PATH}"
+        
+        log_info "SSH agent started with socket: ${SSH_AGENT_SOCKET_PATH}"
+    else
+        log_error "Failed to start SSH agent"
+        cat /tmp/ssh-agent-output
+        return 1
+    fi
+    
+    # Load keys if provided (do this before changing socket ownership)
+    if [[ -n "${SSH_AGENT_KEYS}" ]]; then
+        load_agent_keys || true
+    fi
+
+    # Set proper permissions on the socket for the SSH user after loading keys
+    if [[ -S "${SSH_AGENT_SOCKET_PATH}" ]]; then
+        chmod 600 "${SSH_AGENT_SOCKET_PATH}"
+        chown "${SSH_USER}:${SSH_USER}" "${SSH_AGENT_SOCKET_PATH}"
+    fi
+
+    return 0
+}
+
+# Load SSH keys into agent
+load_agent_keys() {
+    log_info "Loading SSH keys into agent..."
+    
+    if [[ -z "${SSH_AGENT_KEYS}" ]]; then
+        log_debug "No SSH agent keys provided"
+        return 0
+    fi
+    
+    local key_count=0
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    
+    # Ensure proper cleanup
+    trap "rm -rf ${temp_dir}" EXIT
+    
+    # Process each key (keys are separated by newlines, base64 encoded)
+    echo "${SSH_AGENT_KEYS}" | while IFS= read -r key_line; do
+        if [[ -n "${key_line}" ]]; then
+            ((key_count++))
+            local key_file="${temp_dir}/key_${key_count}"
+            
+            # Decode base64 key and save to temporary file
+            if echo "${key_line}" | base64 -d > "${key_file}" 2>/dev/null; then
+                chmod 600 "${key_file}"
+                
+                # Add key to agent
+                if SSH_AUTH_SOCK="${SSH_AGENT_SOCKET_PATH}" ssh-add "${key_file}" >/dev/null 2>&1; then
+                    log_debug "Successfully added key ${key_count} to agent"
+                else
+                    log_warn "Failed to add key ${key_count} to agent"
+                fi
+            else
+                log_warn "Failed to decode key ${key_count} (invalid base64)"
+            fi
+            
+            # Remove temporary key file immediately
+            rm -f "${key_file}"
+        fi
+    done
+    
+    # Clean up temporary directory
+    rm -rf "${temp_dir}"
+    
+    # List loaded keys for debugging
+    if [[ "${SSH_DEBUG_LEVEL}" -gt 0 ]]; then
+        log_debug "Keys loaded in SSH agent:"
+        SSH_AUTH_SOCK="${SSH_AGENT_SOCKET_PATH}" ssh-add -l 2>/dev/null | while read -r key_info; do
+            log_debug "  ${key_info}"
+        done
+    fi
+    
+    log_info "SSH agent key loading completed"
+}
+
+# Setup agent forwarding environment
+setup_agent_forwarding() {
+    log_debug "Setting up SSH agent forwarding environment..."
+    
+    # Create agent forwarding directory for SSH user
+    local agent_dir="/home/${SSH_USER}/.ssh"
+    
+    # Ensure .ssh directory exists and has proper permissions
+    if [[ ! -d "${agent_dir}" ]]; then
+        mkdir -p "${agent_dir}"
+        chmod 700 "${agent_dir}"
+        chown "${SSH_USER}:${SSH_USER}" "${agent_dir}"
+    fi
+    
+    # If we have a local agent running, set up environment for SSH user
+    if [[ "${SSH_AGENT_START}" == "yes" ]] && [[ -S "${SSH_AGENT_SOCKET_PATH}" ]]; then
+        log_debug "Setting SSH_AUTH_SOCK for user ${SSH_USER}"
+        
+        # Create a startup script for the SSH user that sets SSH_AUTH_SOCK
+        cat > "/home/${SSH_USER}/.ssh/agent_env" << EOF
+# SSH Agent Environment Variables
+export SSH_AUTH_SOCK=${SSH_AGENT_SOCKET_PATH}
+EOF
+        chmod 644 "/home/${SSH_USER}/.ssh/agent_env"
+        chown "${SSH_USER}:${SSH_USER}" "/home/${SSH_USER}/.ssh/agent_env"
+        
+        # Add sourcing of agent environment to user's shell profiles
+        local shell_profiles=(".bashrc" ".profile")
+        for profile in "${shell_profiles[@]}"; do
+            local profile_path="/home/${SSH_USER}/${profile}"
+            if [[ -f "${profile_path}" ]] || [[ "${profile}" == ".bashrc" ]]; then
+                # Create .bashrc if it doesn't exist
+                if [[ ! -f "${profile_path}" ]]; then
+                    touch "${profile_path}"
+                    chown "${SSH_USER}:${SSH_USER}" "${profile_path}"
+                fi
+                
+                # Add source line if not already present
+                if ! grep -q "source.*agent_env" "${profile_path}" 2>/dev/null; then
+                    echo "" >> "${profile_path}"
+                    echo "# SSH Agent Environment (added by SSH test server)" >> "${profile_path}"
+                    echo "[ -f ~/.ssh/agent_env ] && source ~/.ssh/agent_env" >> "${profile_path}"
+                    log_debug "Added agent environment to ${profile}"
+                fi
+            fi
+        done
+    fi
+    
+    log_debug "Agent forwarding setup completed"
+}
+
 # Print startup information
 print_startup_info() {
     echo ""
@@ -298,6 +449,7 @@ print_startup_info() {
     log_info "Password Auth: ${SSH_PERMIT_PASSWORD_AUTH}"
     log_info "Pubkey Auth: ${SSH_PERMIT_PUBKEY_AUTH}"
     log_info "Challenge-Response Auth: ${SSH_CHALLENGE_RESPONSE_AUTH}"
+    log_info "Agent Forwarding: ${SSH_AGENT_FORWARDING}"
     log_info "Debug Level: ${SSH_DEBUG_LEVEL}"
     
     if [[ "${SSH_AUTH_METHODS}" != "any" ]]; then
@@ -306,6 +458,17 @@ print_startup_info() {
     
     if [[ -n "${SSH_AUTHORIZED_KEYS}" ]]; then
         log_info "Authorized Keys: $(echo "${SSH_AUTHORIZED_KEYS}" | wc -l) keys configured"
+    fi
+    
+    if [[ "${SSH_AGENT_START}" == "yes" ]]; then
+        log_info "SSH Agent: Started (socket: ${SSH_AGENT_SOCKET_PATH})"
+        if [[ -n "${SSH_AGENT_KEYS}" ]]; then
+            local key_count
+            key_count=$(echo "${SSH_AGENT_KEYS}" | grep -c '^[A-Za-z0-9+/]')
+            log_info "SSH Agent Keys: ${key_count} keys loaded"
+        fi
+    else
+        log_info "SSH Agent: Disabled"
     fi
     
     log_info "=========================="
@@ -333,6 +496,12 @@ main() {
     
     # Setup MOTD
     setup_motd
+    
+    # Start SSH agent if requested
+    start_ssh_agent
+    
+    # Setup agent forwarding environment
+    setup_agent_forwarding
     
     # Configure SSH daemon
     configure_sshd
@@ -366,15 +535,47 @@ main() {
         exit 1
     fi
     
-    log_info "SSH daemon starting in foreground mode..."
+    log_info "SSH daemon starting (background) and attaching..."
     
-    # Start SSH daemon in foreground mode - this will keep the container alive
-    # and allow us to see all SSH logs in docker logs
-    exec /usr/sbin/sshd "${SSHD_ARGS[@]}"
+    # Start SSH daemon in background to keep this script as PID 1
+    # so we can handle signals and perform cleanup (e.g., stop ssh-agent).
+    /usr/sbin/sshd "${SSHD_ARGS[@]}" &
+    SSHD_PID=$!
+    log_debug "sshd started with PID ${SSHD_PID}"
+    
+    # Attach to sshd process and wait; traps will handle termination.
+    wait "${SSHD_PID}"
+}
+
+# Cleanup function
+cleanup() {
+    log_info "Received termination signal, shutting down..."
+    
+    # Stop SSH daemon if running
+    if [[ -n "${SSHD_PID}" ]] && kill -0 "${SSHD_PID}" >/dev/null 2>&1; then
+        log_debug "Stopping SSH daemon (PID ${SSHD_PID})..."
+        kill -TERM "${SSHD_PID}" >/dev/null 2>&1 || true
+        # Give it a moment to stop gracefully
+        sleep 1
+    fi
+    
+    # Stop SSH agent if it's running
+    if [[ "${SSH_AGENT_START}" == "yes" ]] && [[ -S "${SSH_AGENT_SOCKET_PATH}" ]]; then
+        log_debug "Stopping SSH agent..."
+        # Find and kill the agent process
+        if pgrep ssh-agent >/dev/null 2>&1; then
+            pkill ssh-agent
+        fi
+        # Remove agent socket
+        rm -f "${SSH_AGENT_SOCKET_PATH}"
+        log_info "SSH agent stopped"
+    fi
+    
+    exit 0
 }
 
 # Handle signals gracefully
-trap 'log_info "Received termination signal, shutting down..."; exit 0' TERM INT
+trap cleanup TERM INT
 
 # Run main function
 main "$@"

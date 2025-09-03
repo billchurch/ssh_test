@@ -120,6 +120,33 @@ All configuration is done through environment variables:
 | `SSH_AGENT_FORWARDING` | `no` | Enable SSH agent forwarding |
 | `SSH_TCP_FORWARDING` | `no` | Enable TCP forwarding |
 
+### SSH Agent Configuration
+
+The SSH test server includes comprehensive SSH agent support for testing agent-based authentication and forwarding scenarios.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SSH_AGENT_START` | `no` | Start internal SSH agent in container |
+| `SSH_AGENT_KEYS` | *(empty)* | Base64-encoded private keys to load into agent (newline-separated) |
+| `SSH_AGENT_SOCKET_PATH` | `/tmp/ssh-agent.sock` | Custom path for SSH agent socket |
+
+#### SSH Agent Features
+
+- **Internal Agent**: Start an SSH agent inside the container with `SSH_AGENT_START=yes`
+- **Key Loading**: Automatically load private keys into the agent using `SSH_AGENT_KEYS`
+- **Agent Forwarding**: Allow client agents to be forwarded with `SSH_AGENT_FORWARDING=yes`
+- **Custom Socket**: Use custom socket paths for testing specific scenarios
+- **Environment Setup**: Automatically configures user environment for agent access
+
+#### SSH Agent Security Notes
+
+⚠️ **Important**: The `SSH_AGENT_KEYS` variable contains sensitive private key data. In production or CI/CD environments:
+
+- Load keys from secure environment variables or secrets management
+- Never commit private keys to version control
+- Use temporary keys for testing when possible
+- Consider using key passphrases for additional security
+
 ### Advanced Configuration
 
 | Variable | Default | Description |
@@ -192,6 +219,62 @@ docker run -d --name ssh-debug-test \
 
 # View debug logs
 docker logs -f ssh-debug-test
+```
+
+### SSH Agent Examples
+
+#### Basic Agent with Forwarding
+
+```bash
+docker run -d --name ssh-agent-test \
+  -p 2224:22 \
+  -e SSH_USER=agentuser \
+  -e SSH_PASSWORD=agentpass \
+  -e SSH_AGENT_START=yes \
+  -e SSH_AGENT_FORWARDING=yes \
+  ghcr.io/billchurch/ssh_test:latest
+```
+
+#### Agent with Preloaded Keys
+
+```bash
+# Generate a test key
+ssh-keygen -t ed25519 -f test_agent_key -N "" -C "test@example.com"
+
+# Encode the private key for the container
+KEY_DATA=$(base64 -i test_agent_key | tr -d '\n')
+
+# Run container with agent and key
+docker run -d --name ssh-agent-keys \
+  -p 2224:22 \
+  -e SSH_USER=keyuser \
+  -e SSH_AUTHORIZED_KEYS="$(cat test_agent_key.pub)" \
+  -e SSH_PERMIT_PASSWORD_AUTH=no \
+  -e SSH_AGENT_START=yes \
+  -e SSH_AGENT_KEYS="${KEY_DATA}" \
+  ghcr.io/billchurch/ssh_test:latest
+
+# Test SSH connection using the agent
+ssh -p 2224 keyuser@localhost
+
+# Cleanup
+rm -f test_agent_key test_agent_key.pub
+```
+
+#### Agent Forwarding Only (No Internal Agent)
+
+```bash
+# For testing client agent forwarding
+docker run -d --name ssh-forwarding-test \
+  -p 2224:22 \
+  -e SSH_USER=forwarduser \
+  -e SSH_PASSWORD=forwardpass \
+  -e SSH_AGENT_FORWARDING=yes \
+  -e SSH_AGENT_START=no \
+  ghcr.io/billchurch/ssh_test:latest
+
+# Connect with agent forwarding enabled
+ssh -A -p 2224 forwarduser@localhost
 ```
 
 ## Testing Tools
