@@ -77,6 +77,18 @@ log_debug() {
     fi
 }
 
+# Detect if the target image is the Alpine variant (by label or filesystem)
+is_alpine_image() {
+    # Detect via image label 'variant=alpine' (set in Alpine Dockerfile)
+    local variant
+    variant=$(docker image inspect "${DOCKER_IMAGE}" --format '{{index .Config.Labels "variant"}}' 2>/dev/null || true)
+    if [[ "${variant}" == "alpine" ]]; then
+        log_debug "Detected Alpine variant via image label"
+        return 0
+    fi
+    return 1
+}
+
 log_test_start() {
     echo -e "${BLUE}[TEST]${NC} Starting: $1"
 }
@@ -343,6 +355,82 @@ test_password_authentication() {
     return 0
 }
 
+# Test keyboard-interactive (PAM) authentication (Debian variant)
+test_keyboard_interactive() {
+    local test_name="Keyboard-Interactive Authentication"
+    log_test_start "${test_name}"
+    ((TESTS_RUN++))
+
+    # Skip on Alpine until sshd supports PAM (UsePAM)
+    if is_alpine_image; then
+        log_warn "Skipping ${test_name} on Alpine (UsePAM unsupported)"
+        log_test_pass "${test_name} (skipped)"
+        return 0
+    fi
+
+    local container_name="ssh-test-kbdint-$$"
+    local port=2230
+
+    # Start container with keyboard-interactive via PAM only
+    if ! docker run -d --rm --name "${container_name}" \
+        -e SSH_USER=kbduser \
+        -e SSH_PASSWORD=kbdpass \
+        -e SSH_PERMIT_PASSWORD_AUTH=no \
+        -e SSH_PERMIT_PUBKEY_AUTH=no \
+        -e SSH_CHALLENGE_RESPONSE_AUTH=yes \
+        -e SSH_USE_PAM=yes \
+        -e SSH_DEBUG_LEVEL=1 \
+        -p "${port}:22" \
+        "${DOCKER_IMAGE}" >/dev/null 2>&1; then
+        log_test_fail "${test_name}: Failed to start container"
+        return 1
+    fi
+
+    # Wait for container to be ready
+    if ! wait_for_container "${container_name}" "${port}" 10; then
+        cleanup_container "${container_name}"
+        log_test_fail "${test_name}: Container not ready"
+        return 1
+    fi
+
+    # Test correct password via keyboard-interactive
+    if ! sshpass -p "kbdpass" ssh \
+        -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o KbdInteractiveAuthentication=yes \
+        -o PreferredAuthentications=keyboard-interactive \
+        -o PasswordAuthentication=no \
+        -o PubkeyAuthentication=no \
+        -o NumberOfPasswordPrompts=1 \
+        -p "${port}" kbduser@localhost \
+        "echo 'Kbd-Interactive auth successful'" >/dev/null 2>&1; then
+        cleanup_container "${container_name}"
+        log_test_fail "${test_name}: Valid keyboard-interactive auth rejected"
+        return 1
+    fi
+
+    # Test incorrect password (should fail)
+    if sshpass -p "wrongpassword" ssh \
+        -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o KbdInteractiveAuthentication=yes \
+        -o PreferredAuthentications=keyboard-interactive \
+        -o PasswordAuthentication=no \
+        -o PubkeyAuthentication=no \
+        -o NumberOfPasswordPrompts=1 \
+        -p "${port}" kbduser@localhost \
+        "echo 'Should not work'" >/dev/null 2>&1; then
+        cleanup_container "${container_name}"
+        log_test_fail "${test_name}: Invalid keyboard-interactive password accepted"
+        return 1
+    fi
+
+    log_test_pass "${test_name}"
+    cleanup_container "${container_name}"
+    return 0
+}
 # Test public key authentication
 test_pubkey_authentication() {
     local test_name="Public Key Authentication"
@@ -739,6 +827,7 @@ main() {
     local test_functions=(
         test_basic_functionality
         test_password_authentication
+        test_keyboard_interactive
         test_pubkey_authentication
         test_custom_port
         test_security_hardening
