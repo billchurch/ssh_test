@@ -155,6 +155,29 @@ The SSH test server includes comprehensive SSH agent support for testing agent-b
 | `SSH_CUSTOM_CONFIG` | *(empty)* | Additional sshd_config directives |
 | `SSH_USE_PAM` | `no` | Use PAM for authentication |
 
+#### SSH_CUSTOM_CONFIG Examples
+
+The `SSH_CUSTOM_CONFIG` environment variable allows you to add any additional SSH configuration directives that aren't explicitly handled by other environment variables. Multiple directives can be stacked using newlines.
+
+```bash
+# Allow specific environment variables from SSH client
+docker run -d \
+  -p 2244:22 \
+  -e SSH_USER=testuser \
+  -e SSH_PASSWORD=testpassword \
+  -e SSH_AUTHORIZED_KEYS="$(cat ./test-keys/*.pub)" \
+  -e SSH_DEBUG_LEVEL=3 \
+  -e SSH_PERMIT_PASSWORD_AUTH=yes \
+  -e SSH_PERMIT_PUBKEY_AUTH=yes \
+  -e SSH_CUSTOM_CONFIG=$'PermitUserEnvironment yes\nAcceptEnv FOO' \
+  ghcr.io/billchurch/ssh_test:alpine
+
+# Multiple custom configurations
+docker run -d \
+  -e SSH_CUSTOM_CONFIG=$'MaxSessions 10\nClientAliveInterval 30\nClientAliveCountMax 3' \
+  ghcr.io/billchurch/ssh_test:alpine
+```
+
 ## Usage Examples
 
 ### Password Authentication Only
