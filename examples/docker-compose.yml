@@ -39,6 +39,40 @@ services:
       - alpine
       - all
 
+  # Dropbear SSH server (SCP only, no SFTP - simulates BusyBox devices)
+  ssh-dropbear:
+    image: ghcr.io/billchurch/ssh_test:dropbear
+    container_name: ssh-test-dropbear
+    ports:
+      - "2235:22"
+    environment:
+      - SSH_USER=testuser
+      - SSH_PASSWORD=testpass123
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_DEBUG_LEVEL=1
+    restart: unless-stopped
+    profiles:
+      - dropbear
+      - busybox
+      - all
+
+  # SCP-only server (alias for webssh2 File Browser testing)
+  # Reference: https://github.com/billchurch/webssh2/issues/483
+  ssh-scp-only:
+    image: ghcr.io/billchurch/ssh_test:dropbear
+    container_name: ssh-test-scp-only
+    ports:
+      - "2236:22"
+    environment:
+      - SSH_USER=testuser
+      - SSH_PASSWORD=testpass123
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - SSH_DEBUG_LEVEL=1
+    restart: unless-stopped
+    profiles:
+      - scp-only
+      - no-sftp
+
   # Basic password authentication setup (Debian)
   ssh-password-basic:
     image: ghcr.io/billchurch/ssh_test:debian

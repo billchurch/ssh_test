@@ -89,6 +89,17 @@ is_alpine_image() {
     return 1
 }
 
+# Detect if the target image is the Dropbear variant (by label)
+is_dropbear_image() {
+    local variant
+    variant=$(docker image inspect "${DOCKER_IMAGE}" --format '{{index .Config.Labels "variant"}}' 2>/dev/null || true)
+    if [[ "${variant}" == "dropbear" ]]; then
+        log_debug "Detected Dropbear variant via image label"
+        return 0
+    fi
+    return 1
+}
+
 log_test_start() {
     echo -e "${BLUE}[TEST]${NC} Starting: $1"
 }
@@ -368,6 +379,13 @@ test_keyboard_interactive() {
         return 0
     fi
 
+    # Skip on Dropbear (no PAM support)
+    if is_dropbear_image; then
+        log_warn "Skipping ${test_name} on Dropbear (no PAM support)"
+        log_test_pass "${test_name} (skipped)"
+        return 0
+    fi
+
     local container_name="ssh-test-kbdint-$$"
     local port=2230
 
@@ -642,10 +660,11 @@ test_debug_mode() {
         "echo 'Debug test'" >/dev/null 2>&1
     
     # Check container logs for debug output
+    # Dropbear uses different debug output format than OpenSSH
     local logs
     logs=$(docker logs "${container_name}" 2>&1)
-    
-    if echo "${logs}" | grep -q "debug"; then
+
+    if echo "${logs}" | grep -qi "debug\|TRACE\|child connection\|Auth"; then
         log_test_pass "${test_name}"
         cleanup_container "${container_name}"
         return 0
@@ -705,11 +724,18 @@ test_ssh_agent() {
     local test_name="SSH Agent Integration"
     log_test_start "${test_name}"
     ((TESTS_RUN++))
-    
+
+    # Skip on Dropbear (no ssh-agent)
+    if is_dropbear_image; then
+        log_warn "Skipping ${test_name} on Dropbear (no ssh-agent support)"
+        log_test_pass "${test_name} (skipped)"
+        return 0
+    fi
+
     # Get the directory of this script
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    
+
     # Path to agent test script
     local agent_test_script="${script_dir}/test-ssh-agent.sh"
     
@@ -741,6 +767,112 @@ test_ssh_agent() {
     else
         log_test_fail "${test_name} - SSH agent tests failed"
     fi
+}
+
+# Test that SFTP is NOT available (Dropbear-specific)
+test_no_sftp() {
+    local test_name="No SFTP Subsystem"
+    log_test_start "${test_name}"
+    ((TESTS_RUN++))
+
+    # Only run on Dropbear images
+    if ! is_dropbear_image; then
+        log_warn "Skipping ${test_name} (not a Dropbear image)"
+        log_test_pass "${test_name} (skipped)"
+        return 0
+    fi
+
+    local container_name="ssh-test-nosftp-$$"
+    local port=2237
+
+    # Start container
+    if ! docker run -d --rm --name "${container_name}" \
+        -e SSH_USER=sftpuser \
+        -e SSH_PASSWORD=sftppass123 \
+        -e SSH_DEBUG_LEVEL=1 \
+        -p "${port}:22" \
+        "${DOCKER_IMAGE}" >/dev/null 2>&1; then
+        log_test_fail "${test_name}: Failed to start container"
+        return 1
+    fi
+
+    if ! wait_for_container "${container_name}" "${port}" 10; then
+        cleanup_container "${container_name}"
+        log_test_fail "${test_name}: Container not ready"
+        return 1
+    fi
+
+    # SFTP connection should FAIL (subsystem not available)
+    if sshpass -p "sftppass123" sftp \
+        -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o BatchMode=yes \
+        -P "${port}" sftpuser@localhost <<< "quit" >/dev/null 2>&1; then
+        cleanup_container "${container_name}"
+        log_test_fail "${test_name}: SFTP succeeded but should have failed (no SFTP subsystem)"
+        return 1
+    fi
+
+    log_test_pass "${test_name}"
+    cleanup_container "${container_name}"
+    return 0
+}
+
+# Test that SCP works (Dropbear-specific)
+test_scp_works() {
+    local test_name="SCP File Transfer"
+    log_test_start "${test_name}"
+    ((TESTS_RUN++))
+
+    # Only run on Dropbear images
+    if ! is_dropbear_image; then
+        log_warn "Skipping ${test_name} (not a Dropbear image)"
+        log_test_pass "${test_name} (skipped)"
+        return 0
+    fi
+
+    local container_name="ssh-test-scp-$$"
+    local port=2238
+
+    # Start container
+    if ! docker run -d --rm --name "${container_name}" \
+        -e SSH_USER=scpuser \
+        -e SSH_PASSWORD=scppass123 \
+        -e SSH_DEBUG_LEVEL=1 \
+        -p "${port}:22" \
+        "${DOCKER_IMAGE}" >/dev/null 2>&1; then
+        log_test_fail "${test_name}: Failed to start container"
+        return 1
+    fi
+
+    if ! wait_for_container "${container_name}" "${port}" 10; then
+        cleanup_container "${container_name}"
+        log_test_fail "${test_name}: Container not ready"
+        return 1
+    fi
+
+    # Create a temp file to transfer
+    local temp_file
+    temp_file=$(mktemp)
+    echo "SCP test content $$" > "${temp_file}"
+
+    # SCP upload should succeed (use -O for legacy SCP protocol)
+    if ! sshpass -p "scppass123" scp -O \
+        -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -P "${port}" "${temp_file}" scpuser@localhost:/tmp/scp_test_file >/dev/null 2>&1; then
+        cleanup_container "${container_name}"
+        rm -f "${temp_file}"
+        log_test_fail "${test_name}: SCP upload failed"
+        return 1
+    fi
+
+    rm -f "${temp_file}"
+    log_test_pass "${test_name}"
+    cleanup_container "${container_name}"
+    return 0
 }
 
 # Run a single test
@@ -834,6 +966,8 @@ main() {
         test_debug_mode
         test_env_validation
         test_ssh_agent
+        test_no_sftp
+        test_scp_works
     )
     
     # Run tests

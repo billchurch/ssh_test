@@ -21,7 +21,7 @@ SSH_PASSWORD ?= testpass123
 # Build targets
 build: build-debian ## Build the default (Debian) Docker image
 
-build-all: build-debian build-alpine ## Build both Debian and Alpine images
+build-all: build-debian build-alpine build-dropbear ## Build all image variants
 
 build-debian: ## Build Debian-based image
 	docker build -f docker/Dockerfile -t $(IMAGE_NAME):debian -t $(IMAGE_NAME):latest .
@@ -30,6 +30,10 @@ build-debian: ## Build Debian-based image
 build-alpine: ## Build Alpine-based image
 	docker build -f docker/Dockerfile.alpine -t $(IMAGE_NAME):alpine .
 	@echo "✅ Built Alpine image: $(IMAGE_NAME):alpine"
+
+build-dropbear: ## Build Dropbear-based image (SCP only, no SFTP)
+	docker build -f docker/Dockerfile.dropbear -t $(IMAGE_NAME):dropbear .
+	@echo "✅ Built Dropbear image: $(IMAGE_NAME):dropbear"
 
 build-dev: ## Build development version (Debian)
 	docker build -f docker/Dockerfile -t $(IMAGE_NAME):$(IMAGE_TAG) .
@@ -49,13 +53,21 @@ run-debian: ## Run Debian-based SSH test server
 		-e SSH_DEBUG_LEVEL=1 \
 		$(IMAGE_NAME):debian
 
-run-alpine: ## Run Alpine-based SSH test server  
+run-alpine: ## Run Alpine-based SSH test server
 	docker run -d --name $(CONTAINER_NAME)-alpine \
 		-p 2225:22 \
 		-e SSH_USER=$(SSH_USER) \
 		-e SSH_PASSWORD=$(SSH_PASSWORD) \
 		-e SSH_DEBUG_LEVEL=1 \
 		$(IMAGE_NAME):alpine
+
+run-dropbear: ## Run Dropbear-based SSH test server (SCP only, no SFTP)
+	docker run -d --name $(CONTAINER_NAME)-dropbear \
+		-p 2226:22 \
+		-e SSH_USER=$(SSH_USER) \
+		-e SSH_PASSWORD=$(SSH_PASSWORD) \
+		-e SSH_DEBUG_LEVEL=1 \
+		$(IMAGE_NAME):dropbear
 
 run-dev: ## Run development version
 	docker run -d --name $(CONTAINER_NAME) \
@@ -74,13 +86,13 @@ run-debug: ## Run container with debug mode enabled
 		$(IMAGE_NAME):$(IMAGE_TAG)
 
 stop: ## Stop all running containers
-	docker stop $(CONTAINER_NAME)-debian $(CONTAINER_NAME)-alpine || true
+	docker stop $(CONTAINER_NAME)-debian $(CONTAINER_NAME)-alpine $(CONTAINER_NAME)-dropbear || true
 	docker stop $(CONTAINER_NAME) $(CONTAINER_NAME)-debug || true
 
 clean: ## Remove containers and images
-	docker rm -f $(CONTAINER_NAME)-debian $(CONTAINER_NAME)-alpine || true
+	docker rm -f $(CONTAINER_NAME)-debian $(CONTAINER_NAME)-alpine $(CONTAINER_NAME)-dropbear || true
 	docker rm -f $(CONTAINER_NAME) $(CONTAINER_NAME)-debug || true
-	docker rmi $(IMAGE_NAME):debian $(IMAGE_NAME):alpine $(IMAGE_NAME):latest || true
+	docker rmi $(IMAGE_NAME):debian $(IMAGE_NAME):alpine $(IMAGE_NAME):dropbear $(IMAGE_NAME):latest || true
 	docker rmi $(IMAGE_NAME):$(IMAGE_TAG) || true
 
 logs: logs-debian ## Show default (Debian) container logs
@@ -88,8 +100,11 @@ logs: logs-debian ## Show default (Debian) container logs
 logs-debian: ## Show Debian container logs
 	docker logs -f $(CONTAINER_NAME)-debian
 
-logs-alpine: ## Show Alpine container logs  
+logs-alpine: ## Show Alpine container logs
 	docker logs -f $(CONTAINER_NAME)-alpine
+
+logs-dropbear: ## Show Dropbear container logs
+	docker logs -f $(CONTAINER_NAME)-dropbear
 
 shell: shell-debian ## Get a shell in the default (Debian) container
 
@@ -99,16 +114,22 @@ shell-debian: ## Get a shell in the Debian container
 shell-alpine: ## Get a shell in the Alpine container
 	docker exec -it $(CONTAINER_NAME)-alpine /bin/sh
 
+shell-dropbear: ## Get a shell in the Dropbear container
+	docker exec -it $(CONTAINER_NAME)-dropbear /bin/bash
+
 # Testing targets
 test: test-debian ## Run integration tests on default (Debian) image
 
-test-all: test-debian test-alpine ## Run integration tests on both images
+test-all: test-debian test-alpine test-dropbear ## Run integration tests on all images
 
 test-debian: ## Run integration tests on Debian image
 	./tests/integration/run-tests.sh --image $(IMAGE_NAME):debian
 
 test-alpine: ## Run integration tests on Alpine image
 	./tests/integration/run-tests.sh --image $(IMAGE_NAME):alpine
+
+test-dropbear: ## Run integration tests on Dropbear image
+	./tests/integration/run-tests.sh --image $(IMAGE_NAME):dropbear
 
 test-parallel: ## Run tests in parallel
 	./tests/integration/run-tests.sh --image $(IMAGE_NAME):$(IMAGE_TAG) --parallel
@@ -119,14 +140,20 @@ test-verbose: ## Run tests with verbose output
 test-connection-debian: ## Test SSH connection to Debian container
 	./scripts/test-connection.sh --host localhost --port $(SSH_PORT) --user $(SSH_USER) --password $(SSH_PASSWORD)
 
-test-connection-alpine: ## Test SSH connection to Alpine container  
+test-connection-alpine: ## Test SSH connection to Alpine container
 	./scripts/test-connection.sh --host localhost --port 2225 --user $(SSH_USER) --password $(SSH_PASSWORD)
+
+test-connection-dropbear: ## Test SSH connection to Dropbear container
+	./scripts/test-connection.sh --host localhost --port 2226 --user $(SSH_USER) --password $(SSH_PASSWORD)
 
 test-auth-debian: ## Test authentication methods on Debian container
 	./scripts/test-auth-methods.sh --container $(CONTAINER_NAME)-debian --user $(SSH_USER) --generate-keys
 
 test-auth-alpine: ## Test authentication methods on Alpine container
 	./scripts/test-auth-methods.sh --container $(CONTAINER_NAME)-alpine --user $(SSH_USER) --generate-keys
+
+test-auth-dropbear: ## Test authentication methods on Dropbear container
+	./scripts/test-auth-methods.sh --container $(CONTAINER_NAME)-dropbear --user $(SSH_USER) --generate-keys
 
 test-agent: test-agent-debian ## Run SSH agent tests on default (Debian) image
 
@@ -141,13 +168,14 @@ test-agent-alpine: ## Run SSH agent tests on Alpine image
 test-agent-verbose: ## Run SSH agent tests with verbose output
 	./tests/integration/test-ssh-agent.sh --image $(IMAGE_NAME):$(IMAGE_TAG) --verbose
 
-integration-test: build-all test-all ## Build both images and run integration tests
+integration-test: build-all test-all ## Build all images and run integration tests
 
 # Development targets
 dev-setup: ## Set up development environment
 	chmod +x scripts/*.sh
 	chmod +x tests/integration/*.sh
 	chmod +x docker/entrypoint.sh
+	chmod +x docker/entrypoint-dropbear.sh
 
 lint: ## Lint shell scripts and Dockerfiles
 	@echo "Linting shell scripts..."
@@ -158,14 +186,14 @@ lint: ## Lint shell scripts and Dockerfiles
 	fi
 	@echo "Linting Dockerfiles..."
 	@if command -v hadolint >/dev/null 2>&1; then \
-		hadolint docker/Dockerfile docker/Dockerfile.alpine; \
+		hadolint docker/Dockerfile docker/Dockerfile.alpine docker/Dockerfile.dropbear; \
 	else \
 		echo "hadolint not found, skipping Dockerfile linting"; \
 	fi
 
 security-scan: security-scan-debian ## Run security scan on default (Debian) image
 
-security-scan-all: security-scan-debian security-scan-alpine ## Run security scan on both images
+security-scan-all: security-scan-debian security-scan-alpine security-scan-dropbear ## Run security scan on all images
 
 security-scan-debian: ## Run security scan on Debian image
 	@if command -v trivy >/dev/null 2>&1; then \
@@ -177,6 +205,13 @@ security-scan-debian: ## Run security scan on Debian image
 security-scan-alpine: ## Run security scan on Alpine image
 	@if command -v trivy >/dev/null 2>&1; then \
 		trivy image $(IMAGE_NAME):alpine; \
+	else \
+		echo "trivy not found, skipping security scan"; \
+	fi
+
+security-scan-dropbear: ## Run security scan on Dropbear image
+	@if command -v trivy >/dev/null 2>&1; then \
+		trivy image $(IMAGE_NAME):dropbear; \
 	else \
 		echo "trivy not found, skipping security scan"; \
 	fi
