@@ -1,0 +1,37 @@
+╔════════════════════════════════════════════════════════════════╗
+║          SSH Test Server - Dropbear/BusyBox Edition           ║
+║                   SCP Only - No SFTP                          ║
+╚════════════════════════════════════════════════════════════════╝
+
+Welcome to the SSH Test Server (Dropbear on Alpine Linux)
+Simulates BusyBox/embedded devices with SSH + SCP but NO SFTP
+
+📋 Available Tools:
+  • dropbear    - Dropbear SSH server
+  • dbclient    - Dropbear SSH client
+  • scp         - Secure copy (SCP protocol)
+
+⚠️  Deliberately Excluded:
+  • sftp        - NOT INSTALLED (simulates BusyBox devices)
+  • sftp-server - NOT INSTALLED
+
+ℹ️  System Information:
+  • Base: Alpine Linux 3.19 + Dropbear
+  • SSH Port: ${SSH_PORT}
+  • User: ${SSH_USER}
+  • Debug Level: ${SSH_DEBUG_LEVEL}
+
+🔧 Configuration:
+  • Password Auth: ${SSH_PERMIT_PASSWORD_AUTH}
+  • Public Key Auth: always enabled (Dropbear default)
+  • SCP: ENABLED
+  • SFTP: DISABLED
+
+💡 Quick Tips:
+  • Use 'scp -O' for legacy SCP protocol transfers
+  • SFTP connections will fail with "subsystem request failed"
+  • Logs available via 'docker logs' command
+  • Reference: https://github.com/billchurch/webssh2/issues/483
+
+═══════════════════════════════════════════════════════════════
+

@@ -5,21 +5,25 @@
 
 A fully configurable SSH server Docker container designed specifically for integration testing, development, and SSH client validation. Built with security best practices and complete runtime configurability.
 
-**Available in two optimized variants:**
+**Available in three optimized variants:**
 - **Debian-based** (`ghcr.io/billchurch/ssh_test:debian`): 118MB - Maximum compatibility with full GNU toolchain
 - **Alpine-based** (`ghcr.io/billchurch/ssh_test:alpine`): 13.8MB - Ultra-minimal footprint for resource-constrained environments
+- **Dropbear** (`ghcr.io/billchurch/ssh_test:dropbear`): ~5MB - BusyBox-style SSH with SCP but **no SFTP** ([webssh2 #483](https://github.com/billchurch/webssh2/issues/483))
 
 ## Features
 
 - 🔧 **Fully Configurable**: All SSH settings configurable via environment variables
 - 🔐 **Multiple Auth Methods**: Password, public key, and keyboard-interactive authentication
 - 🏗️ **Multi-Architecture**: Supports AMD64 and ARM64 architectures
+- 🍎 **Apple Container Ready**: Native support for Apple Container on Apple Silicon Macs
 - 🛡️ **Security Focused**: Configurable security hardening options
 - 🐛 **Debug Support**: Adjustable SSH debug levels with proper logging
 - 📊 **CI/CD Ready**: Automated builds, testing, and container registry publishing
 - 🧪 **Testing Tools**: Comprehensive test scripts and integration tests included
 
 ## Quick Start
+
+You can run the SSH test server using Docker, Docker Compose, or Apple Container (for macOS with Apple Silicon).
 
 ### Choosing Your Image
 
@@ -31,8 +35,11 @@ docker pull ghcr.io/billchurch/ssh_test:alpine
 
 # Debian - Full compatibility (118MB, default)
 docker pull ghcr.io/billchurch/ssh_test:debian
-# or 
+# or
 docker pull ghcr.io/billchurch/ssh_test:latest  # same as debian
+
+# Dropbear - SCP only, no SFTP (~5MB)
+docker pull ghcr.io/billchurch/ssh_test:dropbear
 ```
 
 ### Using Docker
@@ -52,9 +59,17 @@ docker run -d --name ssh-test-debian \
   -e SSH_PASSWORD=testpass123 \
   ghcr.io/billchurch/ssh_test:debian
 
+# Dropbear - SCP only, no SFTP (simulates BusyBox devices)
+docker run -d --name ssh-test-dropbear \
+  -p 2226:22 \
+  -e SSH_USER=testuser \
+  -e SSH_PASSWORD=testpass123 \
+  ghcr.io/billchurch/ssh_test:dropbear
+
 # Test the connections
 ssh -p 2225 testuser@localhost  # Alpine
 ssh -p 2224 testuser@localhost  # Debian
+ssh -p 2226 testuser@localhost  # Dropbear
 ```
 
 ### Using Docker Compose
@@ -73,11 +88,90 @@ docker-compose --profile debian up -d
 # Run both versions simultaneously
 docker-compose --profile all up -d
 
+# Run Dropbear version (SCP only, no SFTP)
+docker-compose --profile dropbear up -d
+
 # Traditional profiles still available
 docker-compose --profile basic up -d        # Basic password auth
 docker-compose --profile pubkey up -d       # Public key auth only
 docker-compose --profile hardened up -d     # Security hardened
+docker-compose --profile scp-only up -d     # SCP-only testing alias
 ```
+
+### Using Apple Container (macOS with Apple Silicon)
+
+[Apple Container](https://github.com/apple/container) is Apple's native tool for running Linux containers as lightweight VMs on Apple Silicon Macs. The SSH test server works seamlessly with Apple Container since it produces OCI-compatible images.
+
+#### Requirements
+
+- Mac with Apple Silicon (M1/M2/M3/M4)
+- macOS 26 (latest beta)
+- Apple Container installed: `brew install apple/tools/container`
+
+#### First-Time Setup
+
+Before running containers, start the container system (one-time setup):
+
+```bash
+# Start the container system (will prompt to install kernel if needed)
+container system start
+```
+
+The first time you run this, it will prompt to install the recommended default kernel. Accept the prompt to continue.
+
+#### Basic Usage
+
+```bash
+# Pull and run Alpine variant (minimal - 13.8MB)
+container run --rm -d --name ssh-test-alpine \
+  -p 2224:22 \
+  -e SSH_USER=testuser \
+  -e SSH_PASSWORD=testpassword \
+  --cpus 1 \
+  --memory 96mb \
+  ghcr.io/billchurch/ssh_test:alpine
+
+# Pull and run Debian variant (full compatibility - 118MB)
+container run --rm -d --name ssh-test-debian \
+  -p 2224:22 \
+  -e SSH_USER=testuser \
+  -e SSH_PASSWORD=testpass123 \
+  --cpus 1 \
+  --memory 96mb \
+  ghcr.io/billchurch/ssh_test:debian
+
+# Test the connections
+ssh -p 2225 testuser@localhost  # Alpine
+ssh -p 2224 testuser@localhost  # Debian
+
+# View logs
+container logs ssh-test-alpine
+
+# Stop and remove
+container stop ssh-test-alpine
+container rm ssh-test-alpine
+```
+
+#### Public Key Authentication with Apple Container
+
+```bash
+# Generate a test key
+ssh-keygen -t ed25519 -f test_key -N ""
+
+# Start container with public key
+container run -d --name ssh-key-test \
+  -p 2224:22 \
+  -e SSH_USER=keyuser \
+  -e "SSH_AUTHORIZED_KEYS=$(cat test_key.pub)" \
+  -e SSH_PERMIT_PASSWORD_AUTH=no \
+  -e SSH_PERMIT_PUBKEY_AUTH=yes \
+  ghcr.io/billchurch/ssh_test:alpine
+
+# Connect with the key
+ssh -i test_key -p 2224 keyuser@localhost
+```
+
+**Note**: All Docker examples in this README work with Apple Container by replacing `docker` with `container`. Apple Container uses the same command-line interface and options as Docker.
 
 ## Configuration
 
@@ -351,6 +445,7 @@ make build-all
 # Build specific variants
 make build-debian    # Debian-based image
 make build-alpine    # Alpine-based image
+make build-dropbear  # Dropbear-based image (SCP only, no SFTP)
 
 # Build for local testing
 make build-dev       # Development version (Debian)
@@ -368,6 +463,7 @@ make test-all
 # Test specific variants
 make test-debian     # Test Debian image
 make test-alpine     # Test Alpine image
+make test-dropbear   # Test Dropbear image
 
 # Run connection tests
 make test-connection-debian   # Test Debian container connection
@@ -427,10 +523,12 @@ docker pull ghcr.io/billchurch/ssh_test:v1.0.2
 # Specific version with variant
 docker pull ghcr.io/billchurch/ssh_test:v1.0.2-alpine
 docker pull ghcr.io/billchurch/ssh_test:v1.0.2-debian
+docker pull ghcr.io/billchurch/ssh_test:v1.0.2-dropbear
 
 # Latest variant tags
 docker pull ghcr.io/billchurch/ssh_test:alpine
 docker pull ghcr.io/billchurch/ssh_test:debian
+docker pull ghcr.io/billchurch/ssh_test:dropbear
 
 # Development builds
 docker pull ghcr.io/billchurch/ssh_test:main
@@ -565,7 +663,13 @@ While designed for testing, security best practices are followed:
 
 **Note**: This container is designed for testing environments. Do not expose it directly to the internet without additional security measures.
 
-## Choosing Between Alpine and Debian
+## Choosing Your Variant
+
+### Use Dropbear When:
+- **Testing SCP fallback**: Your application needs to handle devices without SFTP
+- **BusyBox simulation**: Mimicking embedded/IoT devices that only support SSH + SCP
+- **webssh2 File Browser**: Testing the SCP fallback for [webssh2 #483](https://github.com/billchurch/webssh2/issues/483)
+- **Smallest footprint**: ~5MB image with just SSH and SCP
 
 ### Use Alpine When:
 - **Size matters**: Ultra-minimal 13.8MB footprint
@@ -582,13 +686,16 @@ While designed for testing, security best practices are followed:
 - **Production-like testing**: Closer to typical server environments
 
 ### Performance Comparison:
-| Metric | Alpine | Debian |
-|--------|--------|--------|
-| **Image Size** | 13.8MB | 118MB |
-| **Download Time** | ~2 seconds | ~15 seconds |
-| **Memory Usage** | ~8MB | ~20MB |
-| **Startup Time** | ~1 second | ~2 seconds |
-| **Compatibility** | Good | Excellent |
+| Metric | Dropbear | Alpine | Debian |
+|--------|----------|--------|--------|
+| **Image Size** | ~5MB | 13.8MB | 118MB |
+| **Download Time** | ~1 second | ~2 seconds | ~15 seconds |
+| **Memory Usage** | ~4MB | ~8MB | ~20MB |
+| **Startup Time** | ~1 second | ~1 second | ~2 seconds |
+| **SSH** | Yes | Yes | Yes |
+| **SCP** | Yes | Yes | Yes |
+| **SFTP** | **No** | Yes | Yes |
+| **Compatibility** | Limited | Good | Excellent |
 
 ## License
 
@@ -608,7 +715,9 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and changes.
 
 - **Debian variant**: Built with [Debian](https://www.debian.org/) bookworm-slim for optimal size and compatibility (118MB)
 - **Alpine variant**: Built with [Alpine Linux](https://alpinelinux.org/) for ultra-minimal footprint (13.8MB)
-- Uses [OpenSSH](https://www.openssh.com/) for robust SSH implementation
+- **Dropbear variant**: Built with [Dropbear](https://matt.ucc.asn.au/dropbear/dropbear.html) for SCP-only testing (~5MB)
+- Uses [OpenSSH](https://www.openssh.com/) for robust SSH implementation (Debian/Alpine)
+- Uses [Dropbear](https://matt.ucc.asn.au/dropbear/dropbear.html) for lightweight SSH (Dropbear variant)
 - Optimized Docker images with smart OS detection and adaptive configuration
-- Dual-architecture support with 88% size reduction possible via Alpine
+- Multi-architecture support with 88% size reduction possible via Alpine
 - Inspired by the need for better SSH integration testing tools

@@ -1,0 +1,62 @@
+# SSH Test Server - Dropbear variant for BusyBox/SCP-only testing
+# Provides SSH + SCP but deliberately NO SFTP subsystem
+# Use case: Testing SSH clients against devices that lack SFTP (e.g. BusyBox routers)
+# Reference: https://github.com/billchurch/webssh2/issues/483
+FROM alpine:3.19
+
+# Build arguments for dynamic versioning
+ARG VERSION=0.1.0
+ARG BUILD_DATE
+ARG VCS_REF
+
+LABEL maintainer="SSH Test Server"
+LABEL description="Dropbear SSH server for SCP-only testing - no SFTP subsystem"
+LABEL version="${VERSION}"
+LABEL variant="dropbear"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.revision="${VCS_REF}"
+LABEL org.opencontainers.image.title="SSH Test Server (Dropbear)"
+LABEL org.opencontainers.image.description="Dropbear SSH server for SCP-only testing - no SFTP subsystem"
+
+# Install Dropbear SSH server, SCP, and minimal utilities
+# Deliberately EXCLUDES openssh-sftp-server to simulate BusyBox devices
+# hadolint ignore=DL3018
+RUN apk add --no-cache \
+        dropbear \
+        dropbear-scp \
+        dropbear-dbclient \
+        dropbear-convert \
+        bash \
+        shadow \
+    && rm -rf /var/cache/apk/* \
+    && mkdir -p /etc/dropbear
+
+# Copy scripts and configuration files with correct permissions
+COPY --chmod=755 docker/entrypoint-dropbear.sh /usr/local/bin/entrypoint.sh
+COPY docker/motd.dropbear /usr/local/share/motd.dropbear
+
+# Default environment variables
+# Note: These are test server configuration variables, not secrets
+# hadolint ignore=SC2034
+ENV SSH_USER=testuser \
+    SSH_PASSWORD="" \
+    SSH_AUTHORIZED_KEYS="" \
+    SSH_PERMIT_PASSWORD_AUTH=yes \
+    SSH_PERMIT_ROOT_LOGIN=no \
+    SSH_PORT=22 \
+    SSH_DEBUG_LEVEL=0 \
+    SSH_MAX_AUTH_TRIES=10 \
+    SSH_TCP_FORWARDING=yes \
+    SSH_IDLE_TIMEOUT=0 \
+    SSH_KEEPALIVE=0
+
+# Expose SSH port (default 22, configurable via SSH_PORT)
+EXPOSE 22
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD nc -z localhost ${SSH_PORT:-22} || exit 1
+
+# Use entrypoint script
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

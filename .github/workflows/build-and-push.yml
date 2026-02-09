@@ -36,7 +36,7 @@ jobs:
 
     strategy:
       matrix:
-        variant: [debian, alpine]
+        variant: [debian, alpine, dropbear]
         include:
           - variant: debian
             dockerfile: ./docker/Dockerfile
@@ -44,6 +44,9 @@ jobs:
           - variant: alpine
             dockerfile: ./docker/Dockerfile.alpine
             suffix: "-alpine"
+          - variant: dropbear
+            dockerfile: ./docker/Dockerfile.dropbear
+            suffix: "-dropbear"
 
     steps:
       - name: Checkout repository
@@ -70,34 +73,34 @@ jobs:
             # Branch-based tags
             type=ref,event=branch,suffix=${{ matrix.suffix }}
             type=ref,event=pr,suffix=${{ matrix.suffix }}
-            
-            # Semantic version tags with variant suffix (alpine only)
-            type=semver,pattern={{version}},suffix=${{ matrix.suffix }},enable=${{ matrix.variant == 'alpine' }}
-            type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.suffix }},enable=${{ matrix.variant == 'alpine' }}
-            type=semver,pattern={{major}},suffix=${{ matrix.suffix }},enable=${{ matrix.variant == 'alpine' && github.ref == 'refs/heads/main' }}
-            
-            # Raw version without 'v' prefix (alpine only)
-            type=semver,pattern={{raw}},suffix=${{ matrix.suffix }},enable=${{ matrix.variant == 'alpine' }}
-            
+
+            # Semantic version tags with variant suffix (non-debian variants)
+            type=semver,pattern={{version}},suffix=${{ matrix.suffix }},enable=${{ matrix.variant != 'debian' }}
+            type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.suffix }},enable=${{ matrix.variant != 'debian' }}
+            type=semver,pattern={{major}},suffix=${{ matrix.suffix }},enable=${{ matrix.variant != 'debian' && github.ref == 'refs/heads/main' }}
+
+            # Raw version without 'v' prefix (non-debian variants)
+            type=semver,pattern={{raw}},suffix=${{ matrix.suffix }},enable=${{ matrix.variant != 'debian' }}
+
             # Semantic version tags without suffix (debian only)
             type=semver,pattern={{version}},enable=${{ matrix.variant == 'debian' }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ matrix.variant == 'debian' }}
             type=semver,pattern={{major}},enable=${{ matrix.variant == 'debian' && github.ref == 'refs/heads/main' }}
             type=semver,pattern={{raw}},enable=${{ matrix.variant == 'debian' }}
-            
+
             # Latest tag (only for debian on main branch)
             type=raw,value=latest,enable=${{ matrix.variant == 'debian' && github.ref == 'refs/heads/main' }}
-            
+
             # Variant-specific latest tags
             type=raw,value=${{ matrix.variant }},enable={{is_default_branch}}
-            
+
             # Schedule-based tags
-            type=schedule,pattern={{date 'YYYYMMDD'}},suffix=${{ matrix.suffix }},enable=${{ matrix.variant == 'alpine' }}
+            type=schedule,pattern={{date 'YYYYMMDD'}},suffix=${{ matrix.suffix }},enable=${{ matrix.variant != 'debian' }}
             type=schedule,pattern={{date 'YYYYMMDD'}},enable=${{ matrix.variant == 'debian' }}
-            
+
             # Release-please version tags with variant handling
-            type=raw,value=${{ github.event.client_payload.version }}${{ matrix.suffix }},enable=${{ github.event_name == 'repository_dispatch' && matrix.variant == 'alpine' }}
-            type=raw,value=${{ github.event.client_payload.tag_name }}${{ matrix.suffix }},enable=${{ github.event_name == 'repository_dispatch' && matrix.variant == 'alpine' }}
+            type=raw,value=${{ github.event.client_payload.version }}${{ matrix.suffix }},enable=${{ github.event_name == 'repository_dispatch' && matrix.variant != 'debian' }}
+            type=raw,value=${{ github.event.client_payload.tag_name }}${{ matrix.suffix }},enable=${{ github.event_name == 'repository_dispatch' && matrix.variant != 'debian' }}
             type=raw,value=${{ github.event.client_payload.version }},enable=${{ github.event_name == 'repository_dispatch' && matrix.variant == 'debian' }}
             type=raw,value=${{ github.event.client_payload.tag_name }},enable=${{ github.event_name == 'repository_dispatch' && matrix.variant == 'debian' }}
           labels: |
