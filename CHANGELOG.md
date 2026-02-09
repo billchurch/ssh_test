@@ -5,6 +5,14 @@ All notable changes to the SSH Test Server project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0](https://github.com/billchurch/ssh_test/compare/v1.1.3...v1.2.0) (2026-02-09)
+
+
+### Features
+
+* add  SSH agent support for testing ([c0b3e23](https://github.com/billchurch/ssh_test/commit/c0b3e2327691a5cbaa0ebab93420ec33dd11635f))
+* add Dropbear SSH variant for SCP-only testing ([#12](https://github.com/billchurch/ssh_test/issues/12)) ([2e51515](https://github.com/billchurch/ssh_test/commit/2e51515e1e9a4b7f038761b7f192609f2a7da2c3))
+
 ## [1.1.3](https://github.com/billchurch/ssh_test/compare/v1.1.2...v1.1.3) (2025-09-02)
 
 
