@@ -1,0 +1,19 @@
+// Project markdownlint configuration
+// Matches global ~/.markdownlint.jsonc settings
+{
+  "default": true,
+
+  // Disabled rules
+  "MD013": false,
+  "MD033": false,
+  "MD041": false,
+
+  // Rule configurations
+  "MD012": {
+    "maximum": 1
+  },
+  "MD040": {
+    "allowed_languages": [],
+    "language_only": false
+  }
+}
