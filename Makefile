@@ -17,6 +17,7 @@ CONTAINER_NAME ?= ssh-test-dev
 SSH_PORT ?= 2224
 SSH_USER ?= testuser
 SSH_PASSWORD ?= testpass123
+TELNET_PORT ?= 2323
 
 # Build targets
 build: build-debian ## Build the default (Debian) Docker image
@@ -85,12 +86,22 @@ run-debug: ## Run container with debug mode enabled
 		-e SSH_DEBUG_LEVEL=3 \
 		$(IMAGE_NAME):$(IMAGE_TAG)
 
+run-telnet: ## Run Debian container with telnet enabled
+	docker run -d --name $(CONTAINER_NAME)-telnet \
+		-p $(SSH_PORT):22 \
+		-p $(TELNET_PORT):23 \
+		-e SSH_USER=$(SSH_USER) \
+		-e SSH_PASSWORD=$(SSH_PASSWORD) \
+		-e TELNET_ENABLED=yes \
+		-e SSH_DEBUG_LEVEL=1 \
+		$(IMAGE_NAME):debian
+
 stop: ## Stop all running containers
-	docker stop $(CONTAINER_NAME)-debian $(CONTAINER_NAME)-alpine $(CONTAINER_NAME)-dropbear || true
+	docker stop $(CONTAINER_NAME)-debian $(CONTAINER_NAME)-alpine $(CONTAINER_NAME)-dropbear $(CONTAINER_NAME)-telnet || true
 	docker stop $(CONTAINER_NAME) $(CONTAINER_NAME)-debug || true
 
 clean: ## Remove containers and images
-	docker rm -f $(CONTAINER_NAME)-debian $(CONTAINER_NAME)-alpine $(CONTAINER_NAME)-dropbear || true
+	docker rm -f $(CONTAINER_NAME)-debian $(CONTAINER_NAME)-alpine $(CONTAINER_NAME)-dropbear $(CONTAINER_NAME)-telnet || true
 	docker rm -f $(CONTAINER_NAME) $(CONTAINER_NAME)-debug || true
 	docker rmi $(IMAGE_NAME):debian $(IMAGE_NAME):alpine $(IMAGE_NAME):dropbear $(IMAGE_NAME):latest || true
 	docker rmi $(IMAGE_NAME):$(IMAGE_TAG) || true
@@ -154,6 +165,10 @@ test-auth-alpine: ## Test authentication methods on Alpine container
 
 test-auth-dropbear: ## Test authentication methods on Dropbear container
 	./scripts/test-auth-methods.sh --container $(CONTAINER_NAME)-dropbear --user $(SSH_USER) --generate-keys
+
+test-telnet: ## Quick telnet connection test
+	@echo "Testing telnet connectivity on port $(TELNET_PORT)..."
+	@echo "" | nc -w 3 localhost $(TELNET_PORT) && echo "✅ Telnet server is accessible" || echo "❌ Telnet server is not accessible"
 
 test-agent: test-agent-debian ## Run SSH agent tests on default (Debian) image
 
@@ -239,6 +254,9 @@ compose-agent-basic: ## Start basic SSH agent service
 
 compose-agent-keys: ## Start SSH agent service with preloaded keys
 	docker-compose --profile agent-keys up -d
+
+compose-telnet: ## Start telnet service via Docker Compose
+	docker-compose --profile telnet up -d
 
 # CI/CD simulation
 ci-build: ## Simulate CI build process
