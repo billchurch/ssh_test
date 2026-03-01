@@ -512,16 +512,19 @@ start_telnet() {
 
     log_info "Starting telnet server on port ${TELNET_PORT}..."
 
-    # Verify busybox telnetd is available
-    if ! command -v busybox >/dev/null 2>&1; then
-        log_error "busybox not found - telnet requires busybox"
+    # Verify inetutils-telnetd is available
+    if ! command -v telnetd >/dev/null 2>&1; then
+        log_error "telnetd not found - telnet requires inetutils-telnetd"
         return 1
     fi
 
-    # -F: foreground (we background it ourselves)
-    # -p: port to listen on
-    # -l: login program to spawn
-    busybox telnetd -F -p "${TELNET_PORT}" -l /bin/login &
+    # Use socat to listen and spawn telnetd for each connection.
+    # The nofork option passes the accepted socket directly to telnetd
+    # on stdin/stdout (as a real socket, not pipes), which telnetd
+    # requires for getpeername() to resolve the client address.
+    # telnetd handles telnet protocol negotiation including
+    # TERMINAL-TYPE (RFC 1091).
+    socat TCP-LISTEN:"${TELNET_PORT}",fork,reuseaddr EXEC:/usr/sbin/telnetd,nofork &
     TELNETD_PID=$!
     log_info "Telnet server started (PID ${TELNETD_PID})"
 }

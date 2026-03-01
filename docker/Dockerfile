@@ -28,7 +28,7 @@ RUN apt-get update && \
         mc \
         ncurses-bin \
         socat \
-        busybox-static \
+        inetutils-telnetd \
         libpam-google-authenticator \
         && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
