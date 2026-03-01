@@ -5,6 +5,23 @@ All notable changes to the SSH Test Server project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0](https://github.com/billchurch/ssh_test/compare/v1.2.0...v1.3.0) (2026-03-01)
+
+
+### Features
+
+* add busybox and telnet env vars to Dockerfile ([6fac147](https://github.com/billchurch/ssh_test/commit/6fac147fe29ed3a9b8f58e6700a0db2cf74f119b))
+* add telnet server support to entrypoint ([dd20030](https://github.com/billchurch/ssh_test/commit/dd200308920e7d5435caaf646bd6b9510a90b370))
+* add telnet service to docker-compose ([b23ad60](https://github.com/billchurch/ssh_test/commit/b23ad60f98afb42b5b30606e9e17f59675ec33cf))
+* add telnet targets to Makefile ([6519770](https://github.com/billchurch/ssh_test/commit/651977056f46f59f50b96b3fd938a296de6f1697))
+* replace busybox telnetd with inetutils-telnetd via socat ([1441b6e](https://github.com/billchurch/ssh_test/commit/1441b6edcf0acfbaa3d369475f1f188bcc9a9466))
+* replace busybox telnetd with inetutils-telnetd via socat ([a6792c6](https://github.com/billchurch/ssh_test/commit/a6792c6efbb4fe79cefc8e1ca15ec64400c309e7))
+
+
+### Bug Fixes
+
+* use busybox-static instead of busybox for telnetd applet ([ead419a](https://github.com/billchurch/ssh_test/commit/ead419aeed418b0342f2604f4caeeea15401d3e3))
+
 ## [1.2.0](https://github.com/billchurch/ssh_test/compare/v1.1.3...v1.2.0) (2026-02-09)
 
 
