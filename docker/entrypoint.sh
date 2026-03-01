@@ -69,7 +69,17 @@ validate_env() {
         log_warn "Invalid SSH_LOGIN_GRACE_TIME '${SSH_LOGIN_GRACE_TIME}', using default 120"
         export SSH_LOGIN_GRACE_TIME=120
     fi
-    
+
+    # Validate TELNET_PORT (only if telnet is enabled)
+    if [[ "${TELNET_ENABLED}" == "yes" ]]; then
+        if [[ ! "${TELNET_PORT}" =~ ^[0-9]+$ ]] \
+            || [[ "${TELNET_PORT}" -lt 1 ]] \
+            || [[ "${TELNET_PORT}" -gt 65535 ]]; then
+            log_warn "Invalid TELNET_PORT '${TELNET_PORT}', using default 23"
+            export TELNET_PORT=23
+        fi
+    fi
+
     # Validate SSH_USER
     if [[ -z "${SSH_USER}" ]]; then
         log_error "SSH_USER cannot be empty"
@@ -388,6 +398,60 @@ load_agent_keys() {
     log_info "SSH agent key loading completed"
 }
 
+# Setup static OTP for keyboard-interactive authentication
+setup_static_otp() {
+    if [[ -z "${SSH_KI_STATIC_OTP}" ]]; then
+        log_debug "No static OTP configured"
+        return 0
+    fi
+
+    if [ "$IS_ALPINE" = true ]; then
+        log_warn "SSH_KI_STATIC_OTP is not supported on Alpine (no PAM). Use Debian image."
+        return 0
+    fi
+
+    log_info "Configuring static OTP for keyboard-interactive authentication..."
+
+    # Create google-authenticator config for the user
+    local ga_file="/home/${SSH_USER}/.google_authenticator"
+
+    # For testing: use multiple identical scratch codes so the OTP can be reused
+    # We add many copies of the same code since each use consumes one
+    {
+        echo "AAAAAAAAAAAAAAAA"
+        echo "\" RATE_LIMIT 3 30"
+        echo "\" TOTP_AUTH"
+        # Add 100 copies of the scratch code for repeated testing
+        for _ in {1..100}; do
+            echo "${SSH_KI_STATIC_OTP}"
+        done
+    } > "${ga_file}"
+
+    chmod 600 "${ga_file}"
+    chown "${SSH_USER}:${SSH_USER}" "${ga_file}"
+
+    # Configure PAM for keyboard-interactive with google-authenticator
+    cp /etc/pam.d/sshd /etc/pam.d/sshd.orig
+
+    cat > /etc/pam.d/sshd << 'PAMCONFIG'
+# PAM configuration for SSH with two-factor authentication
+# First factor: password, Second factor: OTP via google-authenticator
+
+# Account and session handling
+@include common-account
+@include common-session
+
+# Authentication - Two factors:
+# Factor 1: Password check via pam_unix
+auth required pam_unix.so
+# Factor 2: OTP check via google-authenticator
+auth required pam_google_authenticator.so nullok
+PAMCONFIG
+
+    log_info "Static OTP configured (OTP: ${SSH_KI_STATIC_OTP})"
+    log_debug "PAM configured with google-authenticator for KI auth"
+}
+
 # Setup agent forwarding environment
 setup_agent_forwarding() {
     log_debug "Setting up SSH agent forwarding environment..."
@@ -439,6 +503,32 @@ EOF
     log_debug "Agent forwarding setup completed"
 }
 
+# Start telnet server if enabled
+start_telnet() {
+    if [[ "${TELNET_ENABLED}" != "yes" ]]; then
+        log_debug "Telnet server disabled"
+        return 0
+    fi
+
+    log_info "Starting telnet server on port ${TELNET_PORT}..."
+
+    # Verify inetutils-telnetd is available
+    if ! command -v telnetd >/dev/null 2>&1; then
+        log_error "telnetd not found - telnet requires inetutils-telnetd"
+        return 1
+    fi
+
+    # Use socat to listen and spawn telnetd for each connection.
+    # The nofork option passes the accepted socket directly to telnetd
+    # on stdin/stdout (as a real socket, not pipes), which telnetd
+    # requires for getpeername() to resolve the client address.
+    # telnetd handles telnet protocol negotiation including
+    # TERMINAL-TYPE (RFC 1091).
+    socat TCP-LISTEN:"${TELNET_PORT}",fork,reuseaddr EXEC:/usr/sbin/telnetd,nofork &
+    TELNETD_PID=$!
+    log_info "Telnet server started (PID ${TELNETD_PID})"
+}
+
 # Print startup information
 print_startup_info() {
     echo ""
@@ -470,7 +560,13 @@ print_startup_info() {
     else
         log_info "SSH Agent: Disabled"
     fi
-    
+
+    if [[ "${TELNET_ENABLED}" == "yes" ]]; then
+        log_info "Telnet: Enabled (port ${TELNET_PORT})"
+    else
+        log_info "Telnet: Disabled"
+    fi
+
     log_info "=========================="
     
     # Display MOTD for direct exec sessions
@@ -499,13 +595,19 @@ main() {
     
     # Start SSH agent if requested
     start_ssh_agent
-    
+
     # Setup agent forwarding environment
     setup_agent_forwarding
-    
+
+    # Setup static OTP for keyboard-interactive if configured
+    setup_static_otp
+
     # Configure SSH daemon
     configure_sshd
-    
+
+    # Start telnet server if enabled
+    start_telnet
+
     # Print startup information
     print_startup_info
     
@@ -543,8 +645,13 @@ main() {
     SSHD_PID=$!
     log_debug "sshd started with PID ${SSHD_PID}"
     
-    # Attach to sshd process and wait; traps will handle termination.
-    wait "${SSHD_PID}"
+    # Wait for background processes; traps will handle termination.
+    # If telnet is running, wait for either process to exit.
+    if [[ -n "${TELNETD_PID}" ]]; then
+        wait -n "${SSHD_PID}" "${TELNETD_PID}"
+    else
+        wait "${SSHD_PID}"
+    fi
 }
 
 # Cleanup function
@@ -570,7 +677,15 @@ cleanup() {
         rm -f "${SSH_AGENT_SOCKET_PATH}"
         log_info "SSH agent stopped"
     fi
-    
+
+    # Stop telnet server if it's running
+    if [[ -n "${TELNETD_PID}" ]] \
+        && kill -0 "${TELNETD_PID}" >/dev/null 2>&1; then
+        log_debug "Stopping telnet server (PID ${TELNETD_PID})..."
+        kill -TERM "${TELNETD_PID}" >/dev/null 2>&1 || true
+        log_info "Telnet server stopped"
+    fi
+
     exit 0
 }
 

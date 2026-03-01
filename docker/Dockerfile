@@ -28,6 +28,8 @@ RUN apt-get update && \
         mc \
         ncurses-bin \
         socat \
+        inetutils-telnetd \
+        libpam-google-authenticator \
         && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
               /usr/share/doc/* \
@@ -67,10 +69,16 @@ ENV SSH_USER=testuser \
     SSH_AGENT_START=no \
     SSH_AGENT_KEYS="" \
     SSH_AGENT_SOCKET_PATH="/tmp/ssh-agent.sock" \
-    SSH_CUSTOM_CONFIG=""
+    SSH_CUSTOM_CONFIG="" \
+    SSH_KI_STATIC_OTP="" \
+    TELNET_ENABLED=no \
+    TELNET_PORT=23
 
 # Expose SSH port (default 22, configurable via SSH_PORT)
 EXPOSE 22
+
+# Expose telnet port (default 23, configurable via TELNET_PORT)
+EXPOSE 23
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
