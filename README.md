@@ -6,6 +6,7 @@
 A fully configurable SSH server Docker container designed specifically for integration testing, development, and SSH client validation. Built with security best practices and complete runtime configurability.
 
 **Available in three optimized variants:**
+
 - **Debian-based** (`ghcr.io/billchurch/ssh_test:debian`): 118MB - Maximum compatibility with full GNU toolchain
 - **Alpine-based** (`ghcr.io/billchurch/ssh_test:alpine`): 13.8MB - Ultra-minimal footprint for resource-constrained environments
 - **Dropbear** (`ghcr.io/billchurch/ssh_test:dropbear`): ~5MB - BusyBox-style SSH with SCP but **no SFTP** ([webssh2 #483](https://github.com/billchurch/webssh2/issues/483))
@@ -20,6 +21,7 @@ A fully configurable SSH server Docker container designed specifically for integ
 - 🐛 **Debug Support**: Adjustable SSH debug levels with proper logging
 - 📊 **CI/CD Ready**: Automated builds, testing, and container registry publishing
 - 🧪 **Testing Tools**: Comprehensive test scripts and integration tests included
+- 📡 **Optional Telnet**: Built-in telnet server for terminal client testing (Debian only)
 
 ## Quick Start
 
@@ -90,6 +92,9 @@ docker-compose --profile all up -d
 
 # Run Dropbear version (SCP only, no SFTP)
 docker-compose --profile dropbear up -d
+
+# Telnet server (Debian with telnet enabled)
+docker-compose --profile telnet up -d
 
 # Traditional profiles still available
 docker-compose --profile basic up -d        # Basic password auth
@@ -180,7 +185,7 @@ All configuration is done through environment variables:
 ### Basic Configuration
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| --- | --- | --- |
 | `SSH_USER` | `testuser` | SSH username to create |
 | `SSH_PASSWORD` | *(empty)* | Password for the SSH user |
 | `SSH_PORT` | `22` | SSH server port |
@@ -189,7 +194,7 @@ All configuration is done through environment variables:
 ### Authentication Configuration
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| --- | --- | --- |
 | `SSH_PERMIT_PASSWORD_AUTH` | `yes` | Enable password authentication |
 | `SSH_PERMIT_PUBKEY_AUTH` | `yes` | Enable public key authentication |
 | `SSH_CHALLENGE_RESPONSE_AUTH` | `no` | Enable keyboard-interactive auth |
@@ -199,7 +204,7 @@ All configuration is done through environment variables:
 ### Security Configuration
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| --- | --- | --- |
 | `SSH_PERMIT_ROOT_LOGIN` | `no` | Allow root login |
 | `SSH_PERMIT_EMPTY_PASSWORDS` | `no` | Allow empty passwords |
 | `SSH_MAX_AUTH_TRIES` | `6` | Maximum authentication attempts |
@@ -209,17 +214,28 @@ All configuration is done through environment variables:
 ### Forwarding Configuration
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| --- | --- | --- |
 | `SSH_X11_FORWARDING` | `no` | Enable X11 forwarding |
 | `SSH_AGENT_FORWARDING` | `no` | Enable SSH agent forwarding |
 | `SSH_TCP_FORWARDING` | `no` | Enable TCP forwarding |
+
+### Telnet Configuration (Debian Only)
+
+The Debian image includes an optional telnet server for testing terminal clients against a plaintext protocol. Disabled by default.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TELNET_ENABLED` | `no` | Enable telnet server (`yes`/`no`) |
+| `TELNET_PORT` | `23` | Telnet server port |
+
+Authentication reuses `SSH_USER` and `SSH_PASSWORD` — telnet spawns `/bin/login` which authenticates against the system user.
 
 ### SSH Agent Configuration
 
 The SSH test server includes comprehensive SSH agent support for testing agent-based authentication and forwarding scenarios.
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| --- | --- | --- |
 | `SSH_AGENT_START` | `no` | Start internal SSH agent in container |
 | `SSH_AGENT_KEYS` | *(empty)* | Base64-encoded private keys to load into agent (newline-separated) |
 | `SSH_AGENT_SOCKET_PATH` | `/tmp/ssh-agent.sock` | Custom path for SSH agent socket |
@@ -244,7 +260,7 @@ The SSH test server includes comprehensive SSH agent support for testing agent-b
 ### Advanced Configuration
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| --- | --- | --- |
 | `SSH_HOST_KEYS` | *(auto-generated)* | Custom host keys (base64 encoded) |
 | `SSH_CUSTOM_CONFIG` | *(empty)* | Additional sshd_config directives |
 | `SSH_USE_PAM` | `no` | Use PAM for authentication |
@@ -394,6 +410,35 @@ docker run -d --name ssh-forwarding-test \
 ssh -A -p 2224 forwarduser@localhost
 ```
 
+### Telnet Server (Debian Only)
+
+```bash
+# Run Debian image with telnet enabled
+docker run -d --name ssh-telnet-test \
+  -p 2224:22 \
+  -p 2323:23 \
+  -e SSH_USER=testuser \
+  -e SSH_PASSWORD=testpass123 \
+  -e TELNET_ENABLED=yes \
+  ghcr.io/billchurch/ssh_test:debian
+
+# Connect via telnet
+telnet localhost 2323
+
+# SSH still works alongside telnet
+ssh -p 2224 testuser@localhost
+
+# Custom telnet port
+docker run -d --name ssh-telnet-custom \
+  -p 2224:22 \
+  -p 8023:8023 \
+  -e SSH_USER=testuser \
+  -e SSH_PASSWORD=testpass123 \
+  -e TELNET_ENABLED=yes \
+  -e TELNET_PORT=8023 \
+  ghcr.io/billchurch/ssh_test:debian
+```
+
 ## Testing Tools
 
 The project includes comprehensive testing tools:
@@ -485,6 +530,7 @@ make integration-test        # Build both + test both
 We welcome contributions! This project uses automated releases and conventional commit messages.
 
 **Quick Start:**
+
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/your-feature`
 3. Make changes following our [contribution guidelines](CONTRIBUTING.md)
@@ -493,6 +539,7 @@ We welcome contributions! This project uses automated releases and conventional 
 6. Submit a pull request
 
 **Important:** Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
+
 - Conventional commit message format
 - Development workflow
 - Testing requirements  
@@ -586,6 +633,7 @@ docker run -d --name dev-ssh \
 ### Common Issues
 
 **Container fails to start:**
+
 ```bash
 # Check container logs
 docker logs container-name
@@ -595,6 +643,7 @@ docker inspect container-name | jq '.Config.Env'
 ```
 
 **SSH connection refused:**
+
 ```bash
 # Test port connectivity
 nc -zv localhost 2224
@@ -604,6 +653,7 @@ docker exec container-name ps aux | grep sshd
 ```
 
 **Authentication failures:**
+
 ```bash
 # Enable debug mode
 docker run ... -e SSH_DEBUG_LEVEL=3 ...
@@ -623,6 +673,7 @@ When using public key authentication without setting a password (SSH_PASSWORD no
    - Still prevents password-based login (no valid password can match `*`)
 
 If you experience issues with key authentication:
+
 ```bash
 # Check if user account is locked
 docker exec container-name grep username /etc/shadow
@@ -635,7 +686,7 @@ docker exec container-name usermod -p '*' username
 docker exec container-name cat /home/username/.ssh/authorized_keys
 ```
 
-### Debug Mode
+### Enabling Debug Mode
 
 Enable maximum debug output:
 
@@ -665,29 +716,34 @@ While designed for testing, security best practices are followed:
 
 ## Choosing Your Variant
 
-### Use Dropbear When:
+### Use Dropbear When
+
 - **Testing SCP fallback**: Your application needs to handle devices without SFTP
 - **BusyBox simulation**: Mimicking embedded/IoT devices that only support SSH + SCP
 - **webssh2 File Browser**: Testing the SCP fallback for [webssh2 #483](https://github.com/billchurch/webssh2/issues/483)
 - **Smallest footprint**: ~5MB image with just SSH and SCP
 
-### Use Alpine When:
+### Use Alpine When
+
 - **Size matters**: Ultra-minimal 13.8MB footprint
 - **Resource-constrained environments**: Kubernetes pods, edge computing
 - **Fast deployment**: Quicker download and startup times
 - **Security**: Smaller attack surface with minimal components
 - **Simple SSH testing**: Basic SSH client validation
 
-### Use Debian When:
-- **Maximum compatibility**: Full GNU toolchain and libraries  
+### Use Debian When
+
+- **Maximum compatibility**: Full GNU toolchain and libraries
 - **Complex applications**: Applications requiring specific libraries
 - **Legacy systems**: Compatibility with older SSH clients
 - **Development**: More debugging tools and utilities available
 - **Production-like testing**: Closer to typical server environments
+- **Telnet testing**: Optional telnet server for terminal client testing
 
-### Performance Comparison:
+### Performance Comparison
+
 | Metric | Dropbear | Alpine | Debian |
-|--------|----------|--------|--------|
+| --- | --- | --- | --- |
 | **Image Size** | ~5MB | 13.8MB | 118MB |
 | **Download Time** | ~1 second | ~2 seconds | ~15 seconds |
 | **Memory Usage** | ~4MB | ~8MB | ~20MB |
@@ -695,6 +751,7 @@ While designed for testing, security best practices are followed:
 | **SSH** | Yes | Yes | Yes |
 | **SCP** | Yes | Yes | Yes |
 | **SFTP** | **No** | Yes | Yes |
+| **Telnet** | **No** | **No** | Optional |
 | **Compatibility** | Limited | Good | Excellent |
 
 ## License

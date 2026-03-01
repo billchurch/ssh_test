@@ -318,6 +318,25 @@ services:
       - agent-forwarding
       - ssh-agent
 
+  # Telnet server for terminal client testing (webssh2)
+  ssh-telnet:
+    image: ghcr.io/billchurch/ssh_test:debian
+    container_name: ssh-test-telnet
+    ports:
+      - "2237:22"
+      - "2323:23"
+    environment:
+      - SSH_USER=testuser
+      - SSH_PASSWORD=testpass123
+      - SSH_PERMIT_PASSWORD_AUTH=yes
+      - TELNET_ENABLED=yes
+      - TELNET_PORT=23
+      - SSH_DEBUG_LEVEL=1
+    restart: unless-stopped
+    profiles:
+      - telnet
+      - all
+
 volumes:
   dev-workspace:
     driver: local
